@@ -1,0 +1,19 @@
+{
+  "AWC.ModuleTitle": "Armor Weight Class",
+  "AWC.Settings.LightThreshold.Name": "Light Armor Threshold (%)",
+  "AWC.Settings.LightThreshold.Hint": "Armor weight as % of carry capacity below which armor is considered Light. Default: 33",
+  "AWC.Settings.MediumThreshold.Name": "Medium Armor Threshold (%)",
+  "AWC.Settings.MediumThreshold.Hint": "Armor weight as % of carry capacity below which armor is considered Medium (above this = Heavy). Default: 66",
+  "AWC.Settings.ShowIndicator.Name": "Show Weight Class Indicator",
+  "AWC.Settings.ShowIndicator.Hint": "Display a color-coded weight class badge on the character sheet next to equipped armor.",
+  "AWC.Settings.ApplyEncumbrance.Name": "Apply Encumbrance Penalties",
+  "AWC.Settings.ApplyEncumbrance.Hint": "Automatically apply speed and ability check penalties based on the calculated armor weight class, overriding the item's stated type.",
+  "AWC.WeightClass.Light": "Light",
+  "AWC.WeightClass.Medium": "Medium",
+  "AWC.WeightClass.Heavy": "Heavy",
+  "AWC.WeightClass.None": "No Armor",
+  "AWC.UI.WeightClassLabel": "Weight Class",
+  "AWC.UI.ArmorRatio": "Armor Load",
+  "AWC.Notification.NoArmor": "No armor equipped.",
+  "AWC.Notification.SettingsSaved": "Armor Weight Class thresholds updated."
+}

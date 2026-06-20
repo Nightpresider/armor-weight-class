@@ -1,0 +1,40 @@
+{
+  "id": "armor-weight-class",
+  "title": "Armor Weight Class",
+  "description": "Replaces the static armor type weight class (Light/Medium/Heavy) with a dynamic calculation based on equipped armor weight as a percentage of the character's total carry capacity. Thresholds are fully configurable by the GM.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12"
+  },
+  "authors": [
+    {
+      "name": "Shane"
+    }
+  ],
+  "esmodules": [
+    "scripts/armor-weight-class.js"
+  ],
+  "styles": [
+    "styles/armor-weight-class.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "compatibility": {
+          "minimum": "3.0.0",
+          "verified": "3.3.0"
+        }
+      }
+    ]
+  }
+}

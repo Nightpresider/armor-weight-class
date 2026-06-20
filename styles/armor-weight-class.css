@@ -1,0 +1,117 @@
+/* ============================================================
+   Armor Weight Class — Foundry VTT Module Styles
+   ============================================================ */
+
+/* ── Color palette ── */
+:root {
+  --awc-light-color:  #4caf7d;
+  --awc-light-bg:     #1a3326;
+  --awc-medium-color: #e8a838;
+  --awc-medium-bg:    #3a2a10;
+  --awc-heavy-color:  #e05252;
+  --awc-heavy-bg:     #3a1414;
+  --awc-none-color:   #8899aa;
+  --awc-none-bg:      #1e2530;
+}
+
+/* ── Badge container ── */
+.awc-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  margin: 6px 0;
+  border-radius: 4px;
+  border-left: 3px solid currentColor;
+  background: var(--awc-none-bg);
+  font-family: var(--font-primary, serif);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  flex-wrap: wrap;
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.awc-badge.awc-light  { color: var(--awc-light-color);  background: var(--awc-light-bg);  border-color: var(--awc-light-color); }
+.awc-badge.awc-medium { color: var(--awc-medium-color); background: var(--awc-medium-bg); border-color: var(--awc-medium-color); }
+.awc-badge.awc-heavy  { color: var(--awc-heavy-color);  background: var(--awc-heavy-bg);  border-color: var(--awc-heavy-color); }
+.awc-badge.awc-none   { color: var(--awc-none-color);   background: var(--awc-none-bg);   border-color: var(--awc-none-color); }
+
+/* ── Labels ── */
+.awc-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.awc-class-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.awc-pct {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  font-size: 0.75rem;
+}
+
+/* ── Progress bar ── */
+.awc-bar-track {
+  flex: 1;
+  min-width: 60px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.awc-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+  background: var(--awc-none-color);
+}
+
+.awc-bar-fill.awc-light  { background: var(--awc-light-color); }
+.awc-bar-fill.awc-medium { background: var(--awc-medium-color); }
+.awc-bar-fill.awc-heavy  { background: var(--awc-heavy-color); }
+
+/* ── Item tag (in inventory list) ── */
+.awc-item-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.5);
+  vertical-align: middle;
+  letter-spacing: 0.03em;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+/* ── Light theme overrides (for users using a light UI skin) ── */
+.theme-light .awc-badge.awc-light  { background: #edfaf3; }
+.theme-light .awc-badge.awc-medium { background: #fdf6e3; }
+.theme-light .awc-badge.awc-heavy  { background: #fdeaea; }
+.theme-light .awc-item-tag {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.45);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* ── Pulse animation for heavy armor warning ── */
+@keyframes awc-heavy-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+.awc-badge.awc-heavy .awc-class-name {
+  animation: awc-heavy-pulse 2.2s ease-in-out infinite;
+}
