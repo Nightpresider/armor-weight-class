@@ -1,12 +1,12 @@
 # Armor Weight Class
 
-A Foundry VTT module for **D&D 5e** that replaces the static armor type system
-(Light / Medium / Heavy) with a dynamic weight class derived from:
+A Foundry VTT module for **D&D 5e** that replaces three core systems:
 
-> **Armor Weight Class = Equipped Armor Weight ÷ Carry Capacity × 100%**
-
-The thresholds that define each class are fully adjustable by the GM in
-**Game Settings → Module Settings → Armor Weight Class**.
+| Replaced | With |
+|----------|------|
+| Static armor type (Light/Medium/Heavy) | Weight-bracket system derived from equipped weight vs. capacity |
+| `STR × 15` carry capacity | Nonlinear `floor(STR² / 2)` formula |
+| dnd5e AC formula (armor type logic) | `10 + max(DexMod, ConMod) + Σ(item AC bonuses) + misc effects` |
 
 ---
 
@@ -24,14 +24,67 @@ The thresholds that define each class are fully adjustable by the GM in
 
 ---
 
-## How it works
+## Carry Capacity Formula
 
-| Step | Detail |
-|------|--------|
-| **Armor weight** | Sum of `weight` on all equipped items with an armor subtype (light/medium/heavy/natural/shield) |
-| **Carry capacity** | Uses the system's computed encumbrance max (`STR × 15` by default, respects variant encumbrance if enabled) |
-| **Ratio** | `armorWeight / carryCapacity × 100` — capped at 100% for display |
-| **Class** | Compared against the GM-set Light and Medium thresholds; anything above the Medium threshold is Heavy |
+```
+capacity = floor(STR² / 2)
+```
+
+| STR | Capacity |
+|-----|----------|
+|  8  |  32 lbs  |
+| 10  |  50 lbs  |
+| 14  |  98 lbs  |
+| 18  | 162 lbs  |
+| 20  | 200 lbs  |
+
+---
+
+## Armor Brackets
+
+Brackets are calculated from: `equippedArmorWeight / capacity × 100%`
+
+| Bracket | Default Range | Speed Penalty | Disadvantage |
+|---------|--------------|---------------|--------------|
+| Unarmored | 0–25% | — | — |
+| Light | 25–50% | — | — |
+| Medium | 50–75% | −5 ft | — |
+| Heavy | 75–100% | −10 ft | DEX & CON checks |
+| Overburdened | >100% | −20 ft | STR, DEX & CON checks |
+
+Thresholds are adjustable per-world in **Game Settings → Module Settings** (4 sliders: Unarmored→Light, Light→Medium, Medium→Heavy, Heavy→Overburdened).
+
+---
+
+## AC Formula
+
+```
+AC = 10 + max(DexMod, ConMod) + Σ(equippedItem.acBonus) + activeEffectBonuses
+```
+
+- The system's armor-type AC logic is fully bypassed.
+- Active Effects targeting `system.attributes.ac.bonus` still apply (Shield spell, etc.).
+- A visual formula breakdown is displayed on the character sheet.
+
+---
+
+## Equipment Slots
+
+Every character has 4 equipment slots: **Helmet, Breast, Gauntlet, Boots**.
+
+- Only one item per slot at a time.
+- Equipping a new item into an occupied slot auto-unequips the previous one (with a chat notification).
+- Slot is read from the item's native dnd5e **Equipment Type** dropdown (Helmet/Breast/Gauntlet/Boots), which this module adds alongside Clothing and Jewelry sub-types.
+- AC bonus is read from the item's native **Armor Class** field — no separate AWC field needed.
+
+### Setting up an item
+
+1. Open the item sheet for any equipment piece.
+2. Set **Equipment Type** to one of the armor slots (Helmet/Breast/Gauntlet/Boots).
+3. Set the **Armor Class** value — this becomes the item's AC contribution.
+4. Save. The item will now contribute to capacity, AC, and bracket calculations once equipped.
+
+Existing items from before this module was installed can be bulk-migrated with `awc-migration-macro.js` — see the comment header in that file for instructions.
 
 ---
 
@@ -39,36 +92,32 @@ The thresholds that define each class are fully adjustable by the GM in
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Light Armor Threshold (%)** | 33 | Ratio below this = Light |
-| **Medium Armor Threshold (%)** | 66 | Ratio below this = Medium; above = Heavy |
-| **Show Weight Class Indicator** | On | Displays the badge + progress bar on character sheets |
-| **Apply Encumbrance Penalties** | Off | If enabled, Heavy armor class imposes −10 ft speed and disadvantage on Str/Dex/Con checks (in-memory, not saved as Active Effects) |
+| Unarmored → Light Threshold | 25% | Lower bound of Light bracket |
+| Light → Medium Threshold | 50% | Lower bound of Medium bracket |
+| Medium → Heavy Threshold | 75% | Lower bound of Heavy bracket |
+| Heavy → Overburdened Threshold | 100% | Lower bound of Overburdened bracket |
+| Apply Bracket Penalties | On | Speed/disadvantage penalties per bracket |
+| Show AC Breakdown | On | Formula display on character sheet |
+| Show Slot Panel | On | 4-slot equipment panel on character sheet |
 
 ---
 
-## Macro / API
-
-The module exposes a small API at `game.awc` for use in macros:
+## Macro API
 
 ```js
-// Get full weight data for the selected token's actor
+// Full capacity snapshot for selected actor
 const actor = canvas.tokens.controlled[0]?.actor;
-const data = game.awc.getArmorWeightData(actor);
-console.log(data);
-// {
-//   armorWeight: 15,       // lbs
-//   carryCapacity: 150,    // lbs
-//   ratio: 10,             // percent
-//   weightClass: "light",
-//   label: "Light",
-//   hasArmor: true
-// }
+const data = game.awc.getCapacityData(actor);
+// { strScore, capacity, equippedWeight, ratio, pct, bracket }
 
-// Just get the carry capacity
-game.awc.getCarryCapacity(actor); // → 150
+// Force-recompute AC for an actor (returns breakdown object)
+game.awc.applyCustomAC(actor);
+// { base:10, dexMod, conMod, baseMod, usedAbility, itemBonus, miscBonus, total }
 
-// Classify a raw ratio manually
-game.awc.classifyArmorWeight(40); // → "medium"
+// Flag namespace for reading stored flags
+actor.flags[game.awc.FLAG_NS]?.armorBracket   // "light"
+actor.flags[game.awc.FLAG_NS]?.capacity        // 98
+actor.flags[game.awc.FLAG_NS]?.equippedWeight  // 24
 ```
 
 ---
@@ -77,11 +126,11 @@ game.awc.classifyArmorWeight(40); // → "medium"
 
 | Software | Version |
 |----------|---------|
-| Foundry VTT | 11 – 12 |
-| dnd5e system | 3.0 – 3.3 |
+| Foundry VTT | 12 – 14 |
+| dnd5e system | 3.0 – 4.3 |
 
 ---
 
 ## License
 
-MIT — free to use, modify, and redistribute.
+MIT

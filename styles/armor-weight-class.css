@@ -1,117 +1,214 @@
-/* ============================================================
-   Armor Weight Class — Foundry VTT Module Styles
-   ============================================================ */
+/* ================================================================
+   Armor & Weight Overhaul — Foundry VTT Module Styles
+   Dark fantasy aesthetic, cohesive with the dnd5e sheet palette.
+   ================================================================ */
 
-/* ── Color palette ── */
 :root {
-  --awc-light-color:  #4caf7d;
-  --awc-light-bg:     #1a3326;
-  --awc-medium-color: #e8a838;
-  --awc-medium-bg:    #3a2a10;
-  --awc-heavy-color:  #e05252;
-  --awc-heavy-bg:     #3a1414;
-  --awc-none-color:   #8899aa;
-  --awc-none-bg:      #1e2530;
+  --awc-unarmored:     #7ec8e3;
+  --awc-unarmored-bg:  #0d2530;
+  --awc-light:         #6dcf8e;
+  --awc-light-bg:      #0d2518;
+  --awc-medium:        #f0c040;
+  --awc-medium-bg:     #2a1f00;
+  --awc-heavy:         #e07840;
+  --awc-heavy-bg:      #2a1000;
+  --awc-over:          #e03050;
+  --awc-over-bg:       #2a0010;
+
+  --awc-text-dim:      rgba(255,255,255,0.45);
+  --awc-text-mid:      rgba(255,255,255,0.65);
+  --awc-text-full:     rgba(255,255,255,0.88);
+  --awc-border:        rgba(255,255,255,0.08);
+  --awc-surface:       rgba(0,0,0,0.25);
+  --awc-radius:        4px;
 }
 
-/* ── Badge container ── */
-.awc-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  margin: 6px 0;
-  border-radius: 4px;
-  border-left: 3px solid currentColor;
-  background: var(--awc-none-bg);
-  font-family: var(--font-primary, serif);
-  font-size: 0.78rem;
-  line-height: 1.2;
-  flex-wrap: wrap;
+/* ── Colour helpers ── */
+.awc-unarmored { color: var(--awc-unarmored); }
+.awc-light     { color: var(--awc-light);     }
+.awc-medium    { color: var(--awc-medium);    }
+.awc-heavy     { color: var(--awc-heavy);     }
+.awc-over      { color: var(--awc-over);      }
+
+/* ================================================================
+   CAPACITY OVERLAY BAR
+   Transparent overlay on the native encumbrance element.
+   Renders only vertical threshold marker lines and a bracket-
+   colored circle dot (the weight indicator). No fill, no chrome.
+   ================================================================ */
+
+/* Standalone fallback mode (when no encumbrance element was found) */
+.awc-capacity-bar {
   position: relative;
-  transition: background 0.2s ease;
-}
-
-.awc-badge.awc-light  { color: var(--awc-light-color);  background: var(--awc-light-bg);  border-color: var(--awc-light-color); }
-.awc-badge.awc-medium { color: var(--awc-medium-color); background: var(--awc-medium-bg); border-color: var(--awc-medium-color); }
-.awc-badge.awc-heavy  { color: var(--awc-heavy-color);  background: var(--awc-heavy-bg);  border-color: var(--awc-heavy-color); }
-.awc-badge.awc-none   { color: var(--awc-none-color);   background: var(--awc-none-bg);   border-color: var(--awc-none-color); }
-
-/* ── Labels ── */
-.awc-label {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.7;
-  font-size: 0.7rem;
-  flex-shrink: 0;
-}
-
-.awc-class-name {
-  font-weight: 700;
-  font-size: 0.85rem;
-  flex-shrink: 0;
-}
-
-.awc-pct {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.85;
-  font-size: 0.75rem;
-}
-
-/* ── Progress bar ── */
-.awc-bar-track {
-  flex: 1;
-  min-width: 60px;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.awc-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-  background: var(--awc-none-color);
-}
-
-.awc-bar-fill.awc-light  { background: var(--awc-light-color); }
-.awc-bar-fill.awc-medium { background: var(--awc-medium-color); }
-.awc-bar-fill.awc-heavy  { background: var(--awc-heavy-color); }
-
-/* ── Item tag (in inventory list) ── */
-.awc-item-tag {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.5);
-  vertical-align: middle;
-  letter-spacing: 0.03em;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 20px;
+  margin: 2px 0;
+  background: transparent;
   pointer-events: none;
+  cursor: default;
+  overflow: visible;
 }
 
-/* ── Light theme overrides (for users using a light UI skin) ── */
-.theme-light .awc-badge.awc-light  { background: #edfaf3; }
-.theme-light .awc-badge.awc-medium { background: #fdf6e3; }
-.theme-light .awc-badge.awc-heavy  { background: #fdeaea; }
-.theme-light .awc-item-tag {
-  background: rgba(0, 0, 0, 0.05);
-  color: rgba(0, 0, 0, 0.45);
-  border-color: rgba(0, 0, 0, 0.1);
+/* Overlay mode: fill the encumbrance container absolutely.
+   top / height are set precisely from JS; bottom is absent so it does not
+   fight the explicit height. overflow: visible lets the indicator dot sit
+   slightly outside the bar without being clipped. */
+.awc-capacity-bar.awc-enc-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: unset;
+  margin: 0;
+  z-index: 10;
+  overflow: visible;
 }
 
-/* ── Pulse animation for heavy armor warning ── */
-@keyframes awc-heavy-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.6; }
+/* ── Vertical threshold marker lines ── */
+.awc-threshold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #5ba3d9;
+  transform: translateX(-50%);
+  pointer-events: all;
+  cursor: default;
+  opacity: 0.85;
+  z-index: 11;
 }
 
-.awc-badge.awc-heavy .awc-class-name {
-  animation: awc-heavy-pulse 2.2s ease-in-out infinite;
+/* ── Weight indicator (bracket-colored circle) ── */
+.awc-weight-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  z-index: 12;
+  pointer-events: all;
+  cursor: default;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  transition: left 0.3s ease;
+}
+
+.awc-weight-indicator.awc-unarmored { background: var(--awc-unarmored); }
+.awc-weight-indicator.awc-light     { background: var(--awc-light);     }
+.awc-weight-indicator.awc-medium    { background: var(--awc-medium);    }
+.awc-weight-indicator.awc-heavy     { background: var(--awc-heavy);     }
+.awc-weight-indicator.awc-over      {
+  background: var(--awc-over);
+  animation: awc-pulse 1s ease-in-out infinite;
+}
+
+/* ── Right-align native encumbrance fraction label ── */
+.meter.encumbrance > .label,
+.encumbrance > .label,
+.meter.encumbrance > label,
+.encumbrance > label {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 0.25em;
+}
+
+/* ================================================================
+   AC BREAKDOWN
+   ================================================================ */
+
+.awc-ac-breakdown {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 8px;
+}
+
+.awc-ac-formula {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--awc-surface);
+  border: 1px solid var(--awc-border);
+  border-radius: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.awc-ac-formula > span {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--awc-text-mid);
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.awc-ac-formula small {
+  font-size: 0.6rem;
+  color: var(--awc-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.awc-ac-op {
+  color: var(--awc-text-dim) !important;
+  font-size: 0.7rem !important;
+}
+
+.awc-ac-base   { color: var(--awc-text-mid)  !important; }
+.awc-ac-mod    { color: var(--awc-unarmored) !important; font-weight: 600; }
+.awc-ac-items  { color: var(--awc-light)     !important; font-weight: 600; }
+.awc-ac-misc   { color: var(--awc-medium)    !important; font-weight: 600; }
+.awc-ac-total  { color: var(--awc-text-full) !important; font-weight: 700; font-size: 1rem !important; }
+
+/* ================================================================
+   EQUIPMENT SUBTYPE ROW
+   Injected directly below the Equipment Type field; inherits the
+   parent container's className so it matches the native layout.
+   ================================================================ */
+
+.awc-subtype-row {
+  margin-top: 0;  /* flush against the type row above */
+}
+
+.awc-subtype-row select {
+  width: 100%;
+}
+
+/* ================================================================
+   ITEM SHEET FIELDS
+   ================================================================ */
+
+.awc-item-fields {
+  border: 1px solid var(--awc-border);
+  border-radius: var(--awc-radius);
+  padding: 8px 12px;
+  margin: 8px 0;
+  background: var(--awc-surface);
+}
+
+.awc-item-fields legend {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--awc-text-dim);
+  padding: 0 4px;
+}
+
+/* ================================================================
+   ANIMATIONS
+   ================================================================ */
+
+@keyframes awc-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%       { opacity: 0.3; }
+}
+
+/* Overburdened bracket pulsing border */
+.awc-capacity-bar.awc-over {
+  animation: awc-border-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes awc-border-pulse {
+  0%, 100% { border-color: var(--awc-over);            }
+  50%       { border-color: rgba(224, 48, 80, 0.3);    }
 }

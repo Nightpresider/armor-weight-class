@@ -1,11 +1,11 @@
 {
   "id": "armor-weight-class",
   "title": "Armor Weight Class",
-  "description": "Replaces the static armor type weight class (Light/Medium/Heavy) with a dynamic calculation based on equipped armor weight as a percentage of the character's total carry capacity. Thresholds are fully configurable by the GM.",
+  "description": "Full replacement of the dnd5e armor type system and AC calculation. Introduces nonlinear STR-scaled carry capacity, per-slot equipment validation, per-item AC bonuses, and a weight-bracket armor class system. AC is recalculated from scratch using max(DexMod, ConMod) + sum of item AC bonuses.",
   "version": "1.0.0",
   "compatibility": {
-    "minimum": "11",
-    "verified": "12"
+    "minimum": "12",
+    "verified": "14"
   },
   "authors": [
     {
@@ -13,7 +13,13 @@
     }
   ],
   "esmodules": [
-    "scripts/armor-weight-class.js"
+    "scripts/constants.js",
+    "scripts/capacity.js",
+    "scripts/slots.js",
+    "scripts/ac.js",
+    "scripts/hooks.js",
+    "scripts/settings.js",
+    "scripts/sheet-inject.js"
   ],
   "styles": [
     "styles/armor-weight-class.css"
@@ -32,7 +38,7 @@
         "type": "system",
         "compatibility": {
           "minimum": "3.0.0",
-          "verified": "3.3.0"
+          "verified": "4.3.0"
         }
       }
     ]
