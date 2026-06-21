@@ -7,9 +7,8 @@
  * Both are normalised to HTMLElement at the entry point.
  */
 
-import { MODULE_ID, FLAG_NS, SLOT_TYPES, SLOT_KEYS, DEFAULT_BRACKETS } from "./constants.js";
+import { MODULE_ID, FLAG_NS, DEFAULT_BRACKETS } from "./constants.js";
 import { getCapacityData } from "./capacity.js";
-import { getSlotMap } from "./slots.js";
 import { getACBreakdown } from "./ac.js";
 
 const LOG = `${MODULE_ID} |`;
@@ -189,106 +188,7 @@ function injectCapacityBar(el, cap) {
   inner.insertAdjacentHTML("afterbegin", barHTML);
 }
 
-// ─── 2. Slot Panel ────────────────────────────────────────────────────────────
-
-function injectSlotPanel(el, actor) {
-  const slotMap = getSlotMap(actor);
-
-  const slotRows = SLOT_KEYS.map(key => {
-    const info = SLOT_TYPES[key];
-    const item = slotMap[key];
-    const slotLabel = game.i18n.localize(
-      `AWC.Slot.${key.charAt(0).toUpperCase() + key.slice(1)}`
-    );
-
-    if (item) {
-      const acBonus = Number(item.system?.armor?.value ?? 0);
-      const weight = item.system?.weight?.value ?? item.system?.weight ?? 0;
-      return `
-        <div class="awc-slot awc-slot-filled" data-slot="${key}" data-item-id="${item.id}"
-             data-tooltip="${item.name} | ${weight} lbs | +${acBonus} AC">
-          <i class="${info.icon} awc-slot-icon"></i>
-          <div class="awc-slot-body">
-            <span class="awc-slot-name">${item.name}</span>
-            <span class="awc-slot-type">${slotLabel}</span>
-          </div>
-          <div class="awc-slot-stats">
-            <span class="awc-slot-ac">+${acBonus} AC</span>
-            <span class="awc-slot-wt">${weight} lb</span>
-          </div>
-          <button class="awc-slot-unequip" data-item-id="${item.id}" title="Unequip" type="button">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>`;
-    }
-
-    return `
-      <div class="awc-slot awc-slot-empty" data-slot="${key}"
-           data-tooltip="${slotLabel} — empty">
-        <i class="${info.icon} awc-slot-icon"></i>
-        <div class="awc-slot-body">
-          <span class="awc-slot-empty-label">${slotLabel}</span>
-          <span class="awc-slot-empty-sub">${game.i18n.localize("AWC.UI.Empty")}</span>
-        </div>
-      </div>`;
-  }).join("");
-
-  const panelHTML = `
-    <div class="awc-slot-panel">
-      <div class="awc-panel-header">
-        <span>${game.i18n.localize("AWC.UI.EquipmentSlots")}</span>
-      </div>
-      <div class="awc-slot-list">${slotRows}</div>
-    </div>
-  `;
-
-  // Try progressively broader injection targets
-  const tabSelectors = [
-    '.tab[data-tab="inventory"]',
-    '.tab[data-tab="equipment"]',
-    '[data-group][data-tab="inventory"]',
-    '[data-application-part="inventory"]',
-    '.inventory',
-    '.items-list',
-  ];
-
-  for (const sel of tabSelectors) {
-    const target = el.querySelector(sel);
-    if (target) {
-      console.debug(`${LOG} slot panel → prepending into "${sel}"`);
-      target.insertAdjacentHTML("afterbegin", panelHTML);
-      break;
-    }
-  }
-
-  if (!el.querySelector(".awc-slot-panel")) {
-    // Fallback: sheet body or nuclear fallback
-    const fallback = el.querySelector(".sheet-body, .window-content, form") ?? el;
-    console.debug(`${LOG} slot panel → fallback into ${fallback.tagName}.${[...fallback.classList].join(".")}`);
-    fallback.insertAdjacentHTML("afterbegin", panelHTML);
-  }
-
-  // Unequip buttons
-  el.querySelectorAll(".awc-slot-unequip").forEach(btn => {
-    btn.addEventListener("click", async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const item = actor.items.get(ev.currentTarget.dataset.itemId);
-      if (item) await item.update({ "system.equipped": false });
-    });
-  });
-
-  // Click slot body to open item sheet
-  el.querySelectorAll(".awc-slot-filled .awc-slot-body").forEach(body => {
-    body.addEventListener("click", (ev) => {
-      const slotEl = ev.currentTarget.closest(".awc-slot");
-      const item = actor.items.get(slotEl?.dataset.itemId);
-      if (item) item.sheet.render(true);
-    });
-  });
-}
-
-// ─── 3. AC Breakdown ──────────────────────────────────────────────────────────
+// ─── 2. AC Breakdown ──────────────────────────────────────────────────────────
 
 function injectACBreakdown(el, ac) {
   const abilityUsed = ac.usedAbility.toUpperCase();

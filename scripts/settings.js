@@ -89,17 +89,6 @@ export function registerSettings() {
     default: true,
     onChange: () => refreshAllSheets(),
   });
-
-  // ── Show slot panel on character sheet ────────────────────────────────────
-  game.settings.register(MODULE_ID, "showSlotPanel", {
-    name: "AWC.Settings.ShowSlotPanel.Name",
-    hint: "AWC.Settings.ShowSlotPanel.Hint",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-    onChange: () => refreshAllSheets(),
-  });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

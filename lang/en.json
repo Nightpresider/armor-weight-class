@@ -13,8 +13,6 @@
   "AWC.Settings.ApplyPenalties.Hint":      "Apply speed and disadvantage penalties for Medium, Heavy, and Overburdened brackets.",
   "AWC.Settings.ShowACBreakdown.Name":     "Show AC Breakdown",
   "AWC.Settings.ShowACBreakdown.Hint":     "Display the formula breakdown (10 + max(DEX/CON) + items + misc) on the character sheet.",
-  "AWC.Settings.ShowSlotPanel.Name":       "Show Equipment Slot Panel",
-  "AWC.Settings.ShowSlotPanel.Hint":       "Display the equipment slot panel (helmet, breast, gauntlet, boots) on the character sheet.",
   "AWC.Settings.BracketThresholds.Name":   "Bracket Thresholds (advanced)",
   "AWC.Settings.BracketThresholds.Hint":   "Raw threshold object. Edit via the settings sliders above.",
 
@@ -52,8 +50,6 @@
   "AWC.ItemFields.NoSlot":    "— None —",
 
   "AWC.UI.ArmorLoad":         "Armor Load",
-  "AWC.UI.EquipmentSlots":    "Equipment Slots",
-  "AWC.UI.Empty":             "Empty",
   "AWC.UI.ACBreakdown":       "AC Breakdown",
 
   "AWC.Notify.SlotSwap":      "{old} unequipped from {slot} slot. {new} equipped."

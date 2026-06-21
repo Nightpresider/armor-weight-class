@@ -76,6 +76,7 @@ Every character has 4 equipment slots: **Helmet, Breast, Gauntlet, Boots**.
 - Equipping a new item into an occupied slot auto-unequips the previous one (with a chat notification).
 - Slot is read from the item's native dnd5e **Equipment Type** dropdown (Helmet/Breast/Gauntlet/Boots), which this module adds alongside Clothing and Jewelry sub-types.
 - AC bonus is read from the item's native **Armor Class** field — no separate AWC field needed.
+- There is no dedicated equipment-slot panel UI on the character sheet; slot status is tracked internally for the capacity/AC calculations only.
 
 ### Setting up an item
 
@@ -98,7 +99,6 @@ Existing items from before this module was installed can be bulk-migrated with `
 | Heavy → Overburdened Threshold | 100% | Lower bound of Overburdened bracket |
 | Apply Bracket Penalties | On | Speed/disadvantage penalties per bracket |
 | Show AC Breakdown | On | Formula display on character sheet |
-| Show Slot Panel | On | 4-slot equipment panel on character sheet |
 
 ---
 
