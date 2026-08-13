@@ -10,6 +10,7 @@
 import { MODULE_ID, FLAG_NS, DEFAULT_BRACKETS } from "./constants.js";
 import { getCapacityData } from "./capacity.js";
 import { getACBreakdown } from "./ac.js";
+import { getItemSlot } from "./slots.js";
 
 const LOG = `${MODULE_ID} |`;
 
@@ -51,11 +52,75 @@ export function injectCharacterSheetUI(app, html) {
   if (game.settings.get(MODULE_ID, "showACBreakdown") && ac) {
     injectACBreakdown(el, ac);
   }
+
+  hideDollManagedItems(el, actor);
+  wireDollDropUnequip(el, actor);
+}
+
+// ─── 0. Sheet ↔ Doll synchronization ─────────────────────────────────────────
+
+/**
+ * True for any item the Paper Doll shows on the actor's doll instead of the
+ * inventory list: any resolvable AWC slot sub-type (armor/clothing/jewelry,
+ * including ring), or an equipped weapon (hand-slot or Exempt position).
+ */
+function isDollManaged(item) {
+  if (!item.system?.equipped) return false;
+  if (getItemSlot(item)) return true;
+  if (item.type === "weapon") return true;
+  return false;
+}
+
+/**
+ * Hides every inventory row for a currently doll-managed item, and un-hides
+ * anything that no longer qualifies (e.g. was just unequipped). Runs on
+ * every render so it stays in sync automatically — no separate "restore"
+ * step is needed elsewhere.
+ */
+function hideDollManagedItems(el, actor) {
+  for (const row of el.querySelectorAll("[data-item-id]")) {
+    const item = actor.items.get(row.dataset.itemId);
+    row.classList.toggle("awc-doll-managed-hidden", !!(item && isDollManaged(item)));
+  }
+}
+
+/**
+ * Recognizes a drag payload originating from an AWC doll slot (tagged
+ * `type: "AWCDollItem"`, set by scripts/apps/paper-doll-app.js's dragstart
+ * handler) dropped anywhere on the character sheet, and unequips the item
+ * instead of falling through to Foundry's native item-drop handling (which
+ * would otherwise try to re-parent/sort an item the actor already owns).
+ * Registered on the capture phase so it runs before the sheet's own native
+ * drop listener, which is bound to the same root element.
+ */
+function wireDollDropUnequip(el, actor) {
+  if (el._awcDollDropWired) return;
+  el._awcDollDropWired = true;
+
+  el.addEventListener("drop", async (event) => {
+    let data;
+    try { data = JSON.parse(event.dataTransfer.getData("text/plain")); }
+    catch { return; }
+    if (data?.type !== "AWCDollItem") return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const item = await fromUuid(data.uuid);
+    if (!item || item.parent?.id !== actor.id) return;
+    await item.update({ "system.equipped": false });
+  }, { capture: true });
 }
 
 // ─── 1. Capacity Bar ──────────────────────────────────────────────────────────
 
 function injectCapacityBar(el, cap) {
+  // Every previous injection (overlaid or standalone) must go first — this
+  // function runs on every sheet render, and without clearing the prior
+  // bar first, insertAdjacentHTML() below just keeps stacking a new one on
+  // top of the old, growing without bound render after render.
+  el.querySelectorAll(".awc-capacity-bar").forEach(bar => bar.remove());
+
   // Read live bracket thresholds; fall back to compile-time defaults.
   let thresholds = DEFAULT_BRACKETS;
   try { thresholds = game.settings.get(MODULE_ID, "bracketThresholds") ?? DEFAULT_BRACKETS; }
@@ -101,15 +166,6 @@ function injectCapacityBar(el, cap) {
     const barTrack    = namedTrack ?? fillTrack;
     const injectTarget = barTrack ?? encEl;
 
-    // ── DEBUG: dump the full encumbrance DOM so we can see what we're working with
-    console.log(
-      `${LOG} [AWC-DBG] encEl: <${encEl.tagName} class="${encEl.className}"> ` +
-      `namedTrack: ${namedTrack ? `<${namedTrack.tagName} class="${namedTrack.className}">` : "null"} ` +
-      `fillTrack: ${fillTrack ? `<${fillTrack.tagName} class="${fillTrack.className}">` : "null"} ` +
-      `injectTarget: <${injectTarget.tagName} class="${injectTarget.className}">`
-    );
-    console.log(`${LOG} [AWC-DBG] encEl innerHTML:\n${encEl.innerHTML}`);
-
     const containerH =
       injectTarget.getBoundingClientRect().height ||
       injectTarget.clientHeight                   ||
@@ -133,16 +189,10 @@ function injectCapacityBar(el, cap) {
         return bestH <= 12 ? best : null;
       })();
 
-    console.log(
-      `${LOG} [AWC-DBG] containerH=${containerH} ` +
-      `visualEl: ${visualEl ? `<${visualEl.tagName} class="${visualEl.className}" style="${visualEl.getAttribute("style")}">` : "null"}`
-    );
-
     if (visualEl && visualEl !== injectTarget) {
       const vH = visualEl.getBoundingClientRect().height || visualEl.offsetHeight || 0;
       const ctop = injectTarget.getBoundingClientRect().top;
       const vtop = visualEl.getBoundingClientRect().top;
-      console.log(`${LOG} [AWC-DBG] vH=${vH} containerH-2=${containerH - 2} vtop-ctop=${vtop - ctop}`);
       if (vH > 0 && vH < containerH - 2) {
         nativeH   = vH;
         topOffset = Math.max(0, vtop - ctop);
@@ -222,6 +272,9 @@ function injectACBreakdown(el, ac) {
   if (acEl) {
     const container = acEl.closest(".attribute, .form-group, .defense, .stat");
     if (container) {
+      // Same accumulation risk as the capacity bar — clear any previous
+      // injection before adding a fresh one.
+      el.querySelectorAll(".awc-ac-breakdown").forEach(node => node.remove());
       console.debug(`${LOG} AC breakdown → inserting after AC container`);
       container.insertAdjacentHTML("afterend", breakdownHTML);
     }

@@ -195,6 +195,16 @@
 }
 
 /* ================================================================
+   SHEET ↔ DOLL SYNC
+   Hides inventory rows for items currently shown on the Paper Doll
+   instead (see sheet-inject.js hideDollManagedItems()).
+   ================================================================ */
+
+.awc-doll-managed-hidden {
+  display: none !important;
+}
+
+/* ================================================================
    ANIMATIONS
    ================================================================ */
 

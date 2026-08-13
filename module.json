@@ -16,13 +16,16 @@
     "scripts/constants.js",
     "scripts/capacity.js",
     "scripts/slots.js",
+    "scripts/paired-slots.js",
     "scripts/ac.js",
-    "scripts/hooks.js",
+    "scripts/migration.js",
     "scripts/settings.js",
-    "scripts/sheet-inject.js"
+    "scripts/sheet-inject.js",
+    "scripts/hooks.js"
   ],
   "styles": [
-    "styles/armor-weight-class.css"
+    "styles/armor-weight-class.css",
+    "styles/paper-doll.css"
   ],
   "languages": [
     {

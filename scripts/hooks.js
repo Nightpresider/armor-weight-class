@@ -3,35 +3,78 @@
  * Registers all Foundry / dnd5e hooks that power the overhaul.
  */
 
-import { MODULE_ID, FLAG_NS, BRACKET_EFFECTS } from "./constants.js";
+import { MODULE_ID, FLAG_NS, BRACKET_EFFECTS, SLOT_TYPES } from "./constants.js";
 import { getCapacityData, persistCapacityFlags } from "./capacity.js";
 import { applyCustomAC } from "./ac.js";
-import { getItemSlot } from "./slots.js";
-import { registerSettings } from "./settings.js";
+import { getItemSlot, getSlotMap, resolveSlotConflicts } from "./slots.js";
+import { getHandSlotState, getRingSlotState } from "./paired-slots.js";
+import { registerSettings, registerAdvancedSettings, registerSettingsMenus } from "./settings.js";
 import { injectCharacterSheetUI } from "./sheet-inject.js";
+import { runMigration } from "./migration.js";
 
 const LOG = `${MODULE_ID} |`;
 
+/**
+ * Foundry v13+ feature-detect. All ApplicationV2 UI (the doll, its per-actor
+ * config popup, the Configure Paper Doll menu) is gated behind this — v12
+ * users keep every other AWC feature (AC/capacity math, sheet injection,
+ * slot exclusivity, migration) unmodified, they just don't get the visual
+ * doll (and the settings that only affect it stay hidden, since config:true
+ * fields render regardless of this gate — see settings.js).
+ */
+function _hasApplicationV2() {
+  return !!(foundry.applications?.api?.ApplicationV2 && foundry.applications?.api?.HandlebarsApplicationMixin);
+}
+
 // ── init ─────────────────────────────────────────────────────────────────────
 
-Hooks.once("init", () => {
+Hooks.once("init", async () => {
   console.log(`${LOG} Initializing Armor & Weight Overhaul`);
   registerSettings();
   // Patch before any actor documents are prepared (actors load between init
   // and ready, so patching here guarantees the override runs on first load).
   _patchArmorClass();
   _patchEquipmentTypes();
+
+  if (_hasApplicationV2()) {
+    registerAdvancedSettings();
+    await registerSettingsMenus();
+  } else {
+    console.log(`${LOG} ApplicationV2 unavailable (pre-v13 client) — Configure Paper Doll menu, Slot Conflict Pairs editor, and doll UI disabled, all other features unaffected`);
+  }
 });
 
 // ── ready ─────────────────────────────────────────────────────────────────────
 
-Hooks.once("ready", () => {
-  game.awc = { getCapacityData, applyCustomAC, FLAG_NS };
+Hooks.once("ready", async () => {
+  game.awc = {
+    getCapacityData,
+    applyCustomAC,
+    getSlotMap,
+    getHandSlotState,
+    getRingSlotState,
+    FLAG_NS,
+    openPaperDoll: _hasApplicationV2() ? _openPaperDoll : undefined,
+  };
   console.log(`${LOG} Ready. API at game.awc`);
 
   _patchArmorClass();
   _registerV14SheetHooks();
+
+  if (game.user.isGM) {
+    await runMigration();
+  }
 });
+
+async function _openPaperDoll(actor) {
+  if (!_hasApplicationV2()) return null;
+  const { AWCPaperDoll } = await import("./apps/paper-doll-app.js");
+  const openWindow = [...foundry.applications.instances.values()].find(w => w instanceof AWCPaperDoll && w.actor === actor);
+  if (openWindow) { openWindow.close(); return null; }
+  const app = new AWCPaperDoll(actor);
+  app.render(true);
+  return app;
+}
 
 // ── AC override: patch _computeArmorClass ────────────────────────────────────
 
@@ -98,21 +141,23 @@ function _patchArmorClass() {
 }
 
 // ── Equipment type definitions ────────────────────────────────────────────────
-// Single source of truth for all AWC-managed equipment groups and their labels.
+// Derived from constants.js's SLOT_TYPES (the single source of truth for every
+// AWC-managed sub-type) — no longer a separately hand-maintained list, so this
+// can't drift out of sync with the slot-exclusivity logic in slots.js the way
+// the old standalone _AWC_EQUIP_GROUPS/SLOT_TYPES pair could.
 
-const _AWC_EQUIP_GROUPS = {
-  Armor:   { helmet: "Helmet", breast: "Breast", gauntlet: "Gauntlet", boots: "Boots" },
-  Clothing: {
-    hat: "Hat", cape: "Cape", shirt: "Shirt", glove: "Glove", trouser: "Trouser",
-    shoes: "Shoes", belt: "Belt", purse: "Purse", backpack: "Backpack",
-  },
-  Jewelry: { crown: "Crown", mask: "Mask", necklace: "Necklace", ring: "Ring" },
-};
+function _buildEquipGroups() {
+  const groups = {};
+  for (const [key, def] of Object.entries(SLOT_TYPES)) {
+    (groups[def.group] ??= {})[key] = def.label;
+  }
+  return groups;
+}
+
+const _AWC_EQUIP_GROUPS = _buildEquipGroups();
 
 // Flat set of all our sub-type keys — used for the isArmor patch
-const _AWC_ARMOR_TYPES = new Set(
-  Object.values(_AWC_EQUIP_GROUPS).flatMap(g => Object.keys(g))
-);
+const _AWC_ARMOR_TYPES = new Set(Object.keys(SLOT_TYPES));
 
 // Keys to strip out of the native select so they don't appear alongside ours
 const _AWC_REMOVE_KEYS = new Set([
@@ -193,14 +238,27 @@ function _applyIsArmorPatch(EquipmentData) {
 /**
  * Directly rewrite the Equipment Type <select> on every item sheet render.
  * This is the reliable path for dnd5e v4, where SelectField choices are baked
- * in at data-model definition time before our init hook runs.
+ * in at data-model definition time before our init hook runs. Lists every
+ * AWC sub-type directly (grouped into Armor/Clothing/Jewelry optgroups) —
+ * choosing e.g. "Helmet" sets system.type.value = "helmet" directly, which
+ * is what getItemSlot() (slots.js), capacity.js, and the doll all key off.
+ *
+ * (A cascading generic Type + separate Subtype dropdown was tried and
+ * reverted — dnd5e's own form submission was overwriting the Type value
+ * whenever a different field changed afterward, in a way that couldn't be
+ * reliably chased down without live debugging access. Flat list only.)
  */
-function _patchEquipmentTypeSelect(el, item) {
-  const sel =
+function _findEquipmentTypeSelect(el) {
+  return (
     el.querySelector('select[data-field="system.type.value"]') ??
     el.querySelector('select[name="system.type.value"]')       ??
     el.querySelector('select[name="system.armor.type"]')       ??
-    null;
+    null
+  );
+}
+
+function _patchEquipmentTypeSelect(el, item) {
+  const sel = _findEquipmentTypeSelect(el);
   if (!sel) return;
 
   const currentVal = sel.value;
@@ -217,67 +275,81 @@ function _patchEquipmentTypeSelect(el, item) {
     }
   }
 
-  // ── Shared option-builder ──
-  function buildOptions(selectEl, activeVal) {
-    selectEl.innerHTML = "";
-    const blank = document.createElement("option");
-    blank.value = "";
-    blank.textContent = "—";
-    if (!activeVal) blank.selected = true;
-    selectEl.appendChild(blank);
+  sel.innerHTML = "";
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "—";
+  if (!currentVal) blank.selected = true;
+  sel.appendChild(blank);
 
-    for (const { value, label } of preserved) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = label;
-      if (value === activeVal) opt.selected = true;
-      selectEl.appendChild(opt);
-    }
-
-    for (const [groupLabel, children] of Object.entries(_AWC_EQUIP_GROUPS)) {
-      const grp = document.createElement("optgroup");
-      grp.label = groupLabel;
-      for (const [val, label] of Object.entries(children)) {
-        const opt = document.createElement("option");
-        opt.value = val;
-        opt.textContent = label;
-        if (val === activeVal) opt.selected = true;
-        grp.appendChild(opt);
-      }
-      selectEl.appendChild(grp);
-    }
+  for (const { value, label } of preserved) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    if (value === currentVal) opt.selected = true;
+    sel.appendChild(opt);
   }
 
-  buildOptions(sel, currentVal);
+  for (const [groupLabel, children] of Object.entries(_AWC_EQUIP_GROUPS)) {
+    const grp = document.createElement("optgroup");
+    grp.label = groupLabel;
+    for (const [val, label] of Object.entries(children)) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      if (val === currentVal) opt.selected = true;
+      grp.appendChild(opt);
+    }
+    sel.appendChild(grp);
+  }
+
   console.debug(`${LOG} equipment type select rebuilt (current: "${currentVal}")`);
+}
 
-  // ── Equipment Subtype ──────────────────────────────────────────────────────
-  // Remove any previously injected subtype row (handles re-renders)
-  el.querySelector(".awc-subtype-row")?.remove();
+let _warnedPaperDollCoexistence = false;
 
-  const typeContainer = sel.closest(".label-top, .form-group, .stacked") ?? sel.parentElement;
-  if (!typeContainer) return;
+/**
+ * Inserts the "open Paper Doll" header icon into a rendered actor-sheet
+ * window, via direct DOM injection into the existing render hook — the same
+ * proven mechanism sheet-inject.js already uses for the capacity bar, rather
+ * than a speculative `getHeaderControls<Name>` hook name (the original
+ * fvtt-paper-doll-ui module relied on exactly such a hook — "getHeaderControlsActorSheetV2"
+ * — that doesn't fire for this installation's actual sheet class name).
+ */
+function _injectDollHeaderButton(app, el, actor) {
+  if (!_hasApplicationV2()) return;
 
-  const currentSubtype = item?.getFlag?.(FLAG_NS, "subType") ?? "";
+  if (game.modules.get("fvtt-paper-doll-ui")?.active) {
+    if (!_warnedPaperDollCoexistence && game.user.isGM) {
+      _warnedPaperDollCoexistence = true;
+      ui.notifications.warn(game.i18n.localize("AWC.Notify.OldModuleActive"));
+      console.warn(`${LOG} fvtt-paper-doll-ui is still active — AWC is deferring its own doll-toggle button to avoid a duplicate. Disable the old module once you've verified AWC's replacement works.`);
+    }
+    return; // don't add a duplicate button while the old module is still handling it
+  }
 
-  const subtypeSel = document.createElement("select");
-  buildOptions(subtypeSel, currentSubtype);
+  el.querySelector(".awc-doll-toggle")?.remove();
 
-  subtypeSel.addEventListener("change", (ev) => {
-    item?.setFlag?.(FLAG_NS, "subType", ev.target.value);
+  const header = el.querySelector(".window-header");
+  if (!header) return;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "header-control awc-doll-toggle";
+  btn.dataset.tooltip = game.i18n.localize("AWC.App.PaperDoll.Title");
+  btn.innerHTML = `<i class="fa-solid fa-person"></i>`;
+  btn.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const { AWCPaperDoll } = await import("./apps/paper-doll-app.js");
+    const openWindow = [...foundry.applications.instances.values()].find(w => w instanceof AWCPaperDoll && w.actor === actor);
+    if (openWindow) openWindow.close();
+    else new AWCPaperDoll(actor).render(true);
   });
 
-  // Wrap in a container that mirrors dnd5e's .label-top layout
-  const row = document.createElement("div");
-  row.className = `awc-subtype-row ${typeContainer.className}`;
-
-  const lbl = document.createElement("label");
-  lbl.textContent = "Equipment Subtype";
-
-  row.appendChild(lbl);
-  row.appendChild(subtypeSel);
-
-  typeContainer.insertAdjacentElement("afterend", row);
+  const closeBtn = header.querySelector('[data-action="close"], .header-control.close, .close');
+  if (closeBtn) closeBtn.insertAdjacentElement("beforebegin", btn);
+  else header.appendChild(btn);
 }
 
 function _registerV14SheetHooks() {
@@ -295,6 +367,8 @@ function _registerV14SheetHooks() {
       const actor = app.actor ?? app.document;
       if (actor?.type !== "character") return;
       injectCharacterSheetUI(app, html);
+      const el = html instanceof HTMLElement ? html : html?.[0];
+      if (el) _injectDollHeaderButton(app, el, actor);
     });
   }
 
@@ -397,22 +471,16 @@ Hooks.on("updateItem", async (item, changes, _options, _userId) => {
   // consistent; render:false on the unequip prevents a redundant re-render.
   const beingEquipped =
     changes?.system?.equipped === true || changes?.["system.equipped"] === true;
+  // Armor/Clothing/Jewelry conflict resolution (SLOT_CONFLICTS pairs +
+  // Helmet/Mask coversFace) — weapons, shields, and rings are handled by
+  // their own updateItem registration in paired-slots.js, since they use a
+  // different (paired-slot) resolution model. resolveSlotConflicts() itself
+  // is a no-op for anything it doesn't recognise (a paired slot, or an item
+  // with no resolvable AWC slot at all), so calling it unconditionally here
+  // is safe and avoids re-duplicating the "which subsystem owns this item"
+  // check that paired-slots.js's own updateItem handler already makes.
   if (beingEquipped) {
-    const slotType = getItemSlot(item);
-    if (slotType) {
-      for (const other of actor.items) {
-        if (other.id === item.id || !other.system?.equipped) continue;
-        if (getItemSlot(other) !== slotType) continue;
-        await other.update({ "system.equipped": false }, { render: false });
-        ui.notifications.info(
-          game.i18n.format("AWC.Notify.SlotSwap", {
-            old:  other.name,
-            slot: game.i18n.localize(`AWC.Slot.${slotType.charAt(0).toUpperCase() + slotType.slice(1)}`),
-            new:  item.name,
-          })
-        );
-      }
-    }
+    await resolveSlotConflicts(actor, item);
   }
 
   console.debug(`${LOG} equip change on "${actor.name}" — refreshing AWC panels`);

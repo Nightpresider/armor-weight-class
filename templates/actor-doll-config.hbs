@@ -1,0 +1,23 @@
+<div>
+  <div class="form-group">
+    <label>{{localize "AWC.App.ActorDollConfig.Img.Label"}}</label>
+    <file-picker accept="image" name="flags.armor-weight-class.dollImg" value="{{dollImg}}" placeholder="{{localize 'AWC.App.ActorDollConfig.Img.Placeholder'}}"></file-picker>
+  </div>
+
+  <div class="form-group">
+    <label>{{localize "AWC.App.ActorDollConfig.ObjectFit.Label"}}</label>
+    <select name="flags.armor-weight-class.dollObjectFit">
+      <option value="cover" {{#if (eq dollObjectFit "cover")}}selected{{/if}}>{{localize "AWC.App.ActorDollConfig.ObjectFit.Cover"}}</option>
+      <option value="contain" {{#if (eq dollObjectFit "contain")}}selected{{/if}}>{{localize "AWC.App.ActorDollConfig.ObjectFit.Contain"}}</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label>{{localize "AWC.App.ActorDollConfig.AutoOpen.Label"}}</label>
+    <select name="flags.armor-weight-class.dollAutoOpen">
+      <option value="useDefault" {{#if (eq dollAutoOpen "useDefault")}}selected{{/if}}>{{localize "AWC.App.ActorDollConfig.AutoOpen.UseDefault"}}</option>
+      <option value="true" {{#if (eq dollAutoOpen "true")}}selected{{/if}}>{{localize "AWC.App.ActorDollConfig.AutoOpen.Always"}}</option>
+      <option value="false" {{#if (eq dollAutoOpen "false")}}selected{{/if}}>{{localize "AWC.App.ActorDollConfig.AutoOpen.Never"}}</option>
+    </select>
+  </div>
+</div>

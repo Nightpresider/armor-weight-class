@@ -1,0 +1,322 @@
+/* ================================================================
+   Armor Weight Class — Paper Doll UI
+   Visual layout independently implemented for AWC's own slot model;
+   not derived from any third-party module's stylesheet.
+   ================================================================ */
+
+:root {
+  --awc-doll-slot-size: 58px;
+  --awc-doll-gap: 0.3rem;
+  --awc-doll-main-color: #191005;
+  --awc-doll-brightness: 55%;
+}
+
+/* ── Window chrome ─────────────────────────────────────────────── */
+
+.awc-paper-doll .window-content {
+  margin: 0;
+  padding: 0;
+}
+
+.awc-doll-toggle i {
+  pointer-events: none;
+}
+
+/* ── Content shell ──────────────────────────────────────────────── */
+
+.awc-doll-content {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.awc-doll-background {
+  position: absolute;
+  inset: 0;
+  background-color: var(--awc-doll-main-color);
+}
+
+.awc-doll-portrait {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.awc-doll-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.9) 100%);
+}
+
+.awc-doll-gradient-2 {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.45));
+}
+
+.awc-doll-foreground {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* ── Slots ──────────────────────────────────────────────────────── */
+
+.awc-doll-slot {
+  width: var(--awc-doll-slot-size);
+  aspect-ratio: 1;
+  border: 2px ridge var(--awc-doll-main-color);
+  border-radius: 3px;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.8);
+  background-color: rgba(0, 0, 0, 0.45);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  color: var(--color-text-light-7, #ccc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.awc-doll-slot.awc-doll-empty {
+  filter: sepia(1) brightness(var(--awc-doll-brightness));
+  opacity: 0.6;
+}
+
+.awc-doll-slot i {
+  pointer-events: none;
+  font-size: 1.1rem;
+}
+
+/* ── Top: left / center / right ────────────────────────────────── */
+
+.awc-doll-top {
+  display: grid;
+  grid-template-columns: 2fr 5fr 2fr;
+  align-items: start;
+}
+
+.awc-doll-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.35rem 0.3rem;
+  gap: var(--awc-doll-gap);
+}
+
+.awc-doll-left { align-items: flex-start; }
+.awc-doll-right { align-items: flex-end; }
+
+.awc-doll-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.35rem 0.3rem;
+}
+
+.awc-doll-center-config {
+  gap: 1.5rem;
+}
+
+.awc-doll-center-row {
+  display: flex;
+  justify-content: center;
+  gap: var(--awc-doll-gap);
+  flex-wrap: wrap;
+}
+
+.awc-doll-center-row .awc-doll-slot {
+  width: calc(var(--awc-doll-slot-size) * 0.8);
+}
+
+/* Exempt (magic shield/weapon) stays full-size, unlike the other
+   center-row slots (top row, ring row) which use the smaller 0.8x size.
+   Matches the .awc-doll-center-row .awc-doll-slot selector's specificity
+   so this override reliably wins by coming later in the file. */
+.awc-doll-center-exempt .awc-doll-slot {
+  width: var(--awc-doll-slot-size);
+}
+
+.awc-doll-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  background: rgba(0, 0, 0, 0.72);
+  border: 2px ridge var(--awc-doll-main-color);
+  border-radius: 4px;
+  max-width: 100%;
+}
+
+.awc-doll-config-panel ul {
+  margin: 0 0 0.4rem;
+  padding-left: 1.1rem;
+  list-style: disc;
+  font-size: 0.8rem;
+  color: var(--color-text-light-6, #ccc);
+}
+
+.awc-doll-config-panel .form-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.awc-doll-config-panel .form-group label {
+  color: var(--color-text-light-7, #eee);
+  white-space: nowrap;
+}
+
+.awc-doll-controls {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.5rem;
+}
+
+.awc-doll-control {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--awc-doll-main-color);
+  border-radius: 50%;
+  width: 1.8rem;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-light-3, #ddd);
+  cursor: pointer;
+}
+
+.awc-doll-control:hover {
+  color: #fff;
+}
+
+.awc-doll-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  background: rgba(0, 0, 0, 0.75);
+  border: 2px ridge var(--awc-doll-main-color);
+  border-radius: 4px;
+  max-width: 100%;
+}
+
+.awc-doll-picker-item {
+  cursor: pointer;
+}
+
+/* ── Lower section: Exempt+Ring group, then the hand-slot pairs ───
+   Pushed to the true bottom of the doll via margin-top:auto — everything
+   above (.awc-doll-top) keeps its natural height instead of stretching to
+   fight it for space, so there's no dead gap between the ring row and the
+   hand-slot pairs beneath it.
+   ================================================================ */
+
+.awc-doll-lower {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--awc-doll-gap);
+  margin-top: auto;
+  padding: 0 0.35rem;
+}
+
+/* One row: Melee pair, Ring/Necklace/Ring, Ranged pair. Melee and Ranged
+   pairs are equal width, so space-between naturally centers the ring trio
+   on the window; align-items:flex-end bottom-aligns the shorter ring boxes
+   (0.8x slot size) flush against the taller hand-slot boxes. Melee/Ranged
+   each show 0–2 boxes depending on what's equipped — see paired-slots.js's
+   getHandSlotState(). */
+.awc-doll-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  width: 100%;
+  min-height: var(--awc-doll-slot-size);
+}
+
+.awc-doll-hand-pair {
+  display: flex;
+  gap: var(--awc-doll-gap);
+}
+
+.awc-doll-hand-pair.awc-doll-hand-collapsed .awc-doll-hand-slot {
+  width: calc(var(--awc-doll-slot-size) * 2 + var(--awc-doll-gap));
+  aspect-ratio: unset;
+  height: var(--awc-doll-slot-size);
+}
+
+/* A hand box no free hand can currently reach (blocked by what's equipped
+   elsewhere — see paired-slots.js's getHandSlotState()) stays visible but
+   dims further than a merely-empty slot; hovering still shows why via the
+   blocker tooltip wired up in paper-doll-app.js's _onHoverIn(). */
+.awc-doll-hand-slot.awc-doll-faded {
+  opacity: 0.25;
+}
+
+/* ── Tooltip ────────────────────────────────────────────────────── */
+
+/* Our own hover panel, not Foundry's game.tooltip singleton — that
+   positions relative to the hovered element in viewport space with no way
+   to pin it to a fixed spot inside a window. This instead lives inside
+   .awc-doll-content (position:relative) and always centers there,
+   regardless of which slot triggered it or where the doll window itself is
+   on screen. Content is set directly by paper-doll-app.js's
+   _setHoverTooltip(); this class only controls appearance/visibility. */
+.awc-doll-hover-tooltip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 240px;
+  text-align: left;
+  line-height: 1.4;
+  padding: 0.4rem 0.65rem;
+  background: radial-gradient(ellipse at center, rgba(15, 10, 5, 0.88) 0%, rgba(15, 10, 5, 0.55) 100%);
+  border-radius: 6px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  font-size: 0.8rem;
+  color: var(--color-text-light-7, #eee);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 150ms ease, visibility 0s 150ms;
+  z-index: 5;
+}
+
+.awc-doll-hover-tooltip.active {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 150ms ease;
+}
+
+/* ================================================================
+   Settings — these render inline on Foundry's own Configure Settings
+   category page (settings.js's custom `input` functions), not a custom
+   AWC window, so unscoped is correct here.
+   ================================================================ */
+
+.awc-json-editor {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+}
+
+.awc-marker-reference {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.awc-marker-reference code {
+  font-size: 0.75rem;
+}

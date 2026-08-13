@@ -4,7 +4,7 @@
  * Bracket classification based on equippedWeight / capacity ratio.
  */
 
-import { MODULE_ID, DEFAULT_BRACKETS } from "./constants.js";
+import { MODULE_ID, FLAG_NS, DEFAULT_BRACKETS } from "./constants.js";
 import { getItemSlot } from "./slots.js";
 
 // ─── Core Formula ─────────────────────────────────────────────────────────────

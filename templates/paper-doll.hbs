@@ -1,0 +1,109 @@
+<div class="awc-doll-content">
+  <div class="awc-doll-background">
+    <img class="awc-doll-portrait" src="{{portraitImage}}" alt="">
+    <div class="awc-doll-gradient"></div>
+    <div class="awc-doll-gradient-2"></div>
+  </div>
+  <div class="awc-doll-foreground">
+    <div class="awc-doll-top">
+      <div class="awc-doll-left awc-doll-col">
+        {{#each left as |slot|}}
+        <div class="awc-doll-slot {{slot.empty}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
+             data-kind="{{slot.kind}}" data-key="{{slot.key}}"
+             style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
+          {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+        </div>
+        {{/each}}
+      </div>
+
+      <div class="awc-doll-center {{#if isConfig}}awc-doll-center-config{{/if}}">
+        <div class="awc-doll-center-row awc-doll-center-top">
+          {{#each centerTop as |slot|}}
+          <div class="awc-doll-slot {{slot.empty}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
+               data-kind="{{slot.kind}}" data-key="{{slot.key}}"
+               style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
+            {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+          </div>
+          {{/each}}
+        </div>
+
+        {{#if isConfig}}
+        <div class="awc-doll-config-panel">
+          <ul>
+            <li>{{localize "AWC.App.DollLayoutConfig.HowToImage"}}</li>
+            <li>{{localize "AWC.App.DollLayoutConfig.HowToClear"}}</li>
+          </ul>
+          <div class="form-group">
+            <label>{{localize "AWC.Settings.DollMainColor.Label"}}</label>
+            <input type="color" name="dollMainColor" value="{{dollMainColor}}">
+          </div>
+          <div class="form-group">
+            <label>{{localize "AWC.Settings.DollBrightness.Label"}}</label>
+            <input type="range" name="dollBrightness" value="{{dollBrightness}}" min="0" max="200" step="1">
+          </div>
+        </div>
+        {{else}}
+        <div class="awc-doll-controls">
+          <i data-action="configure" class="awc-doll-control fas fa-cog" data-tooltip="{{localize 'AWC.App.ActorDollConfig.Title'}}"></i>
+          <i data-action="close" class="awc-doll-control fas fa-times" data-tooltip="{{localize 'AWC.App.PaperDoll.Close'}}"></i>
+        </div>
+        {{/if}}
+      </div>
+
+      <div class="awc-doll-right awc-doll-col">
+        {{#each right as |slot|}}
+        <div class="awc-doll-slot {{slot.empty}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
+             data-kind="{{slot.kind}}" data-key="{{slot.key}}"
+             style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
+          {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+        </div>
+        {{/each}}
+      </div>
+    </div>
+
+    <div class="awc-doll-lower">
+      {{#if showExempt}}
+      <div class="awc-doll-center-row awc-doll-center-exempt">
+        <div class="awc-doll-slot awc-doll-exempt-slot {{exempt.empty}}" draggable="{{#if exempt.item}}true{{else}}false{{/if}}"
+             data-kind="exempt"
+             style="background-image:url('{{#if exempt.item}}{{exempt.item.img}}{{else}}{{exempt.emptyImg}}{{/if}}')">
+          {{#unless exempt.item}}{{#unless exempt.emptyImg}}<i class="{{exempt.icon}}"></i>{{/unless}}{{/unless}}
+        </div>
+      </div>
+      {{/if}}
+
+      <div class="awc-doll-bottom">
+        <div class="awc-doll-hand-pair awc-doll-melee-pair {{#if melee.collapsed}}awc-doll-hand-collapsed{{/if}}">
+          {{#each melee.slots as |slot|}}
+          <div class="awc-doll-slot awc-doll-hand-slot {{slot.empty}} {{slot.faded}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
+               data-kind="hand" data-side="{{slot.side}}" data-box="{{slot.box}}" data-pos="{{slot.pos}}"
+               style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
+            {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+          </div>
+          {{/each}}
+        </div>
+
+        <div class="awc-doll-center-row awc-doll-center-bottom">
+          {{#each centerBottom as |slot|}}
+          <div class="awc-doll-slot {{#if slot.pos}}awc-doll-ring{{/if}} {{slot.empty}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
+               data-kind="{{slot.kind}}" data-key="{{slot.key}}" data-pos="{{slot.pos}}"
+               style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
+            {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+          </div>
+          {{/each}}
+        </div>
+
+        <div class="awc-doll-hand-pair awc-doll-ranged-pair {{#if ranged.collapsed}}awc-doll-hand-collapsed{{/if}}">
+          {{#each ranged.slots as |slot|}}
+          <div class="awc-doll-slot awc-doll-hand-slot {{slot.empty}} {{slot.faded}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
+               data-kind="hand" data-side="{{slot.side}}" data-box="{{slot.box}}" data-pos="{{slot.pos}}"
+               style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
+            {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+          </div>
+          {{/each}}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="awc-doll-hover-tooltip"></div>
+</div>
