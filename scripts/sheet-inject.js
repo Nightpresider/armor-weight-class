@@ -8,7 +8,6 @@
  */
 
 import { MODULE_ID, FLAG_NS, DEFAULT_BRACKETS } from "./constants.js";
-import { getCapacityData } from "./capacity.js";
 import { getACBreakdown } from "./ac.js";
 import { getItemSlot } from "./slots.js";
 
@@ -40,14 +39,16 @@ export function injectCharacterSheetUI(app, html) {
     return;
   }
 
-  // Always remove existing AWC panels before re-injecting.
+  // Always remove existing AWC panels before re-injecting. (.awc-capacity-bar
+  // cleanup stays even though nothing inserts one right now — see note below
+  // injectCapacityBar — so a leftover from an older module version doesn't
+  // linger on someone's sheet.)
   el.querySelector(".awc-capacity-bar")?.remove();
   el.querySelector(".awc-ac-breakdown")?.remove();
 
-  const cap = getCapacityData(actor);
   const ac = getACBreakdown(actor);
 
-  injectCapacityBar(el, cap);
+  mergeHeaderIntoTitleBar(el);
 
   if (game.settings.get(MODULE_ID, "showACBreakdown") && ac) {
     injectACBreakdown(el, ac);
@@ -55,6 +56,82 @@ export function injectCharacterSheetUI(app, html) {
 
   hideDollManagedItems(el, actor);
   wireDollDropUnequip(el, actor);
+}
+
+// ─── Header Embed ─────────────────────────────────────────────────────────
+
+/**
+ * Relocates .sheet-header (name/class/level-badge/rest-buttons — normally
+ * a tall banner living inside .window-content) into Foundry's own native
+ * .window-header, the actual title-bar row holding the window controls
+ * (kebab menu, token-config, close, etc). Confirmed live at a fixed ~36px
+ * tall, so once .sheet-header is a flex child of it (styles in
+ * armor-weight-class.css's HEADER EMBED block), both end up on one
+ * guaranteed single line — no more reasoning about overlap margins
+ * between two independently-sized, stacked boxes.
+ *
+ * Also reorders .sheet-header's own children into a single left-aligned
+ * identity strip — level badge, name, inspiration, class/level text, in
+ * that order — and relocates the rest-buttons out to sit with the native
+ * window controls on the right, per the target layout. Native markup
+ * starts as .left (name, class) and .right (level-badge, inspiration,
+ * boon-badge, rest-buttons) side by side; this interleaves them instead.
+ *
+ * Foundry regenerates .sheet-header fresh inside .window-content on every
+ * render (from its own template, not by reading back current live DOM
+ * state) — REGARDLESS of the fact that a previous render's copy already
+ * sits inside .window-header from this same function. Left unhandled,
+ * each render leaves last render's now-stale relocated copy in place
+ * (never updated — e.g. an inspiration toggle click never visibly
+ * updates) while the fresh, correctly-updated one piles up untouched
+ * back in .window-content (a large, unstyled duplicate header, since it
+ * never got the .awc-embedded-header class). So every render: purge any
+ * stale relocated copy first, then grab THIS render's fresh one
+ * specifically from .window-content — never one already relocated.
+ */
+function mergeHeaderIntoTitleBar(el) {
+  const windowHeader = el.querySelector(".window-header");
+  const windowContent = el.querySelector(".window-content");
+  if (!windowHeader || !windowContent) return;
+
+  // Not every render that fires this hook actually regenerates
+  // .sheet-header — some are partial re-renders of other parts of the
+  // sheet. Check for a genuine fresh copy FIRST and bail if there isn't
+  // one, leaving the already-relocated header exactly as-is; purging it
+  // unconditionally (as an earlier version of this function did) deletes
+  // the only existing copy with nothing to replace it on those renders,
+  // emptying the header entirely.
+  const sheetHeader = windowContent.querySelector(".sheet-header");
+  if (!sheetHeader) return;
+
+  // A fresh copy exists this render — safe to purge last render's
+  // relocated copies now. Rest-buttons get relocated to a spot OUTSIDE
+  // .sheet-header (see below), so purging stale .sheet-header copies
+  // alone wouldn't catch a stale rest-buttons row — needs its own
+  // explicit cleanup here too, same reasoning.
+  windowHeader.querySelectorAll(".sheet-header, .awc-relocated-rest-buttons").forEach(node => node.remove());
+
+  sheetHeader.classList.add("awc-embedded-header");
+  windowHeader.prepend(sheetHeader);
+
+  const left = sheetHeader.querySelector(".left");
+  const right = sheetHeader.querySelector(".right");
+  const name = left?.querySelector(".document-name");
+  const levelBadge = right?.querySelector(".level-badge");
+  const inspiration = right?.querySelector(".inspiration");
+  const boonBadge = right?.querySelector(".boon-badge");
+  const restButtons = right?.querySelector(".sheet-header-buttons");
+
+  if (left && name) {
+    if (levelBadge) name.before(levelBadge);
+    if (inspiration) name.after(inspiration);
+    if (boonBadge) left.appendChild(boonBadge);
+  }
+
+  if (restButtons) {
+    restButtons.classList.add("awc-relocated-rest-buttons");
+    sheetHeader.after(restButtons);
+  }
 }
 
 // ─── 0. Sheet ↔ Doll synchronization ─────────────────────────────────────────
@@ -114,11 +191,31 @@ function wireDollDropUnequip(el, actor) {
 
 // ─── 1. Capacity Bar ──────────────────────────────────────────────────────────
 
+/**
+ * NOT currently called — its call site in injectCharacterSheetUI was
+ * removed once Phase 2 (embedding the bar atop the doll instead) became
+ * the imminent next step, rather than polish an interim placement about
+ * to be thrown away. Kept defined since the markup-building logic here
+ * (thresholds, indicator position, tooltip) is exactly what Phase 2 needs
+ * to reuse when it renders this at the top of the embedded doll instead —
+ * re-enabling meant re-importing getCapacityData from ./capacity.js and
+ * calling injectCapacityBar(el, getCapacityData(actor)) again, or lifting
+ * this logic wholesale into wherever Phase 2's doll-embedding code lives.
+ *
+ * Original design note: built to insert directly into .encumbrance.card
+ * (Inventory tab), taking over the exact slot the native weight meter
+ * occupied — never an "overlay measured from JS" onto that meter. Its
+ * fill is a stylesheet ::before sized off a --bar-percentage custom
+ * property with no child bar/fill element at all (verified against the
+ * actual dnd5e v4 template), so it could never be reliably found/measured
+ * from here, and even if it could, its 2-breakpoint design can't
+ * represent AWC's 4 brackets anyway.
+ */
 function injectCapacityBar(el, cap) {
-  // Every previous injection (overlaid or standalone) must go first — this
-  // function runs on every sheet render, and without clearing the prior
-  // bar first, insertAdjacentHTML() below just keeps stacking a new one on
-  // top of the old, growing without bound render after render.
+  // Every previous injection must go first — this function runs on every
+  // sheet render, and without clearing the prior bar first,
+  // insertAdjacentHTML() below just keeps stacking a new one on top of the
+  // old, growing without bound render after render.
   el.querySelectorAll(".awc-capacity-bar").forEach(bar => bar.remove());
 
   // Read live bracket thresholds; fall back to compile-time defaults.
@@ -151,90 +248,15 @@ function injectCapacityBar(el, cap) {
     </div>
   `;
 
-  const encSel = ".encumbrance, .meter.encumbrance, " +
-    "[data-prop='system.attributes.encumbrance'], " +
-    "[data-field='system.attributes.encumbrance']";
-
-  const encEl = el.querySelector(encSel);
-  if (encEl) {
-    const namedTrack = encEl.querySelector(
-      ".bar, .bar-container, progress, meter, .meter-bar, .encumbrance-bar"
-    );
-    const fillTrack = !namedTrack
-      ? encEl.querySelector('[style*="%"]')?.parentElement ?? null
-      : null;
-    const barTrack    = namedTrack ?? fillTrack;
-    const injectTarget = barTrack ?? encEl;
-
-    const containerH =
-      injectTarget.getBoundingClientRect().height ||
-      injectTarget.clientHeight                   ||
-      injectTarget.offsetHeight                   || 0;
-
-    let nativeH   = containerH;
-    let topOffset = 0;
-
-    const visualEl =
-      ( injectTarget.matches?.("progress, meter") ? injectTarget : null )  ??
-      injectTarget.querySelector("progress, meter")                         ??
-      injectTarget.querySelector('[style*="--pct"]')                        ??
-      injectTarget.querySelector('[style*="width:"]')                       ??
-      (() => {
-        let best = null, bestH = Infinity;
-        for (const child of injectTarget.children) {
-          if (child.classList.contains("awc-capacity-bar")) continue;
-          const h = child.getBoundingClientRect().height || child.offsetHeight || 0;
-          if (h > 0 && h < bestH) { best = child; bestH = h; }
-        }
-        return bestH <= 12 ? best : null;
-      })();
-
-    if (visualEl && visualEl !== injectTarget) {
-      const vH = visualEl.getBoundingClientRect().height || visualEl.offsetHeight || 0;
-      const ctop = injectTarget.getBoundingClientRect().top;
-      const vtop = visualEl.getBoundingClientRect().top;
-      if (vH > 0 && vH < containerH - 2) {
-        nativeH   = vH;
-        topOffset = Math.max(0, vtop - ctop);
-      }
-    }
-
-    injectTarget.style.position = "relative";
-    injectTarget.style.overflow = "visible";
-    injectTarget.insertAdjacentHTML("afterbegin", barHTML);
-
-    const awcBar = injectTarget.querySelector(":scope > .awc-capacity-bar");
-    if (awcBar) {
-      awcBar.classList.add("awc-enc-overlay");
-      if (nativeH   > 0) awcBar.style.height = `${nativeH}px`;
-      if (topOffset > 0) awcBar.style.top    = `${topOffset}px`;
-    }
-
-    const label = encEl.querySelector(".label, label, header");
-    if (label) label.style.cssText += ";display:flex;justify-content:flex-end;gap:0.25em;";
-
-    console.debug(`${LOG} capacity bar → overlaid (h=${nativeH}px, topOffset=${topOffset}px)`);
+  const encCard = el.querySelector(".encumbrance.card");
+  if (encCard) {
+    encCard.insertAdjacentHTML("afterbegin", barHTML);
     return;
   }
 
-  // Fallback: no encumbrance element found — insert as a standalone bar
-  const targets = [
-    { sel: ".sheet-header .attributes, .stats-block, .top-part, .main-top, .stats .attributes", pos: "afterend" },
-    { sel: ".meter, .resource", pos: "afterend" },
-    { sel: '.tab[data-tab="main"], .tab[data-tab="features"], .tab[data-tab="details"]', pos: "afterbegin" },
-  ];
-
-  for (const { sel, pos } of targets) {
-    const target = el.querySelector(sel);
-    if (target) {
-      console.debug(`${LOG} capacity bar → inserting ${pos} "${sel}"`);
-      target.insertAdjacentHTML(pos, barHTML);
-      return;
-    }
-  }
-
+  // Fallback for sheet types without an .encumbrance.card (e.g. if the
+  // Inventory tab's markup differs on a non-character actor type).
   const inner = el.querySelector(".window-content, .sheet-body, form") ?? el;
-  console.debug(`${LOG} capacity bar → nuclear fallback into ${inner.tagName}.${[...inner.classList].join(".")}`);
   inner.insertAdjacentHTML("afterbegin", barHTML);
 }
 

@@ -366,6 +366,17 @@ function _registerV14SheetHooks() {
     Hooks.on(`render${name}`, (app, html, _data) => {
       const actor = app.actor ?? app.document;
       if (actor?.type !== "character") return;
+      // The prototype-chain walk below registers hooks for generic ancestor
+      // classes too (whatever base the actor sheet and, e.g., a Rest dialog
+      // both ultimately share — Foundry fires render<ClassName> for every
+      // class up an app's OWN chain, so both trigger the same hook name).
+      // actor.type alone doesn't discriminate them apart, since a Rest
+      // dialog's .actor IS the same character being rested — confirmed live
+      // via DevTools: AWC's capacity bar was rendering inside a Rest
+      // dialog's .window-content. actor.sheet === app confirms this app
+      // instance is actually the actor's registered sheet, not some other
+      // actor-adjacent dialog.
+      if (actor.sheet !== app) return;
       injectCharacterSheetUI(app, html);
       const el = html instanceof HTMLElement ? html : html?.[0];
       if (el) _injectDollHeaderButton(app, el, actor);
@@ -514,6 +525,9 @@ Hooks.on("renderActorSheet", (app, html, _data) => {
   console.debug(`${LOG} renderActorSheet fired`);
   const actor = app.actor ?? app.document;
   if (actor?.type !== "character") return;
+  // Same reasoning as the v14 hook above — confirm app IS the actor's
+  // actual registered sheet, not some other actor-adjacent application.
+  if (actor.sheet !== app) return;
   injectCharacterSheetUI(app, html);
 });
 

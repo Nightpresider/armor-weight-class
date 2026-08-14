@@ -31,13 +31,15 @@
 .awc-over      { color: var(--awc-over);      }
 
 /* ================================================================
-   CAPACITY OVERLAY BAR
-   Transparent overlay on the native encumbrance element.
-   Renders only vertical threshold marker lines and a bracket-
-   colored circle dot (the weight indicator). No fill, no chrome.
+   CAPACITY BAR
+   Standalone bar (own row at the top of the character sheet), not an
+   overlay on the native encumbrance widget — that widget is hidden below
+   instead, since AWC's own thresholds (4 brackets) can't be represented by
+   the native meter's 2-breakpoint --bar-percentage mechanism anyway.
+   Renders only vertical threshold marker lines and a bracket-colored
+   circle dot (the weight indicator). No fill, no chrome.
    ================================================================ */
 
-/* Standalone fallback mode (when no encumbrance element was found) */
 .awc-capacity-bar {
   position: relative;
   min-height: 20px;
@@ -45,21 +47,6 @@
   background: transparent;
   pointer-events: none;
   cursor: default;
-  overflow: visible;
-}
-
-/* Overlay mode: fill the encumbrance container absolutely.
-   top / height are set precisely from JS; bottom is absent so it does not
-   fight the explicit height. overflow: visible lets the indicator dot sit
-   slightly outside the bar without being clipped. */
-.awc-capacity-bar.awc-enc-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  min-height: unset;
-  margin: 0;
-  z-index: 10;
   overflow: visible;
 }
 
@@ -101,15 +88,11 @@
   animation: awc-pulse 1s ease-in-out infinite;
 }
 
-/* ── Right-align native encumbrance fraction label ── */
-.meter.encumbrance > .label,
-.encumbrance > .label,
-.meter.encumbrance > label,
-.encumbrance > label {
-  display: flex !important;
-  justify-content: flex-end !important;
-  gap: 0.25em;
-}
+/* AWC's own bar no longer inserts into .encumbrance.card (see
+   injectCapacityBar's docstring in sheet-inject.js — parked pending Phase
+   2, which renders it atop the embedded doll instead). Native weight
+   meter stays visible in the meantime rather than leaving no encumbrance
+   indicator at all until Phase 2 lands. */
 
 /* ================================================================
    AC BREAKDOWN
@@ -161,20 +144,6 @@
 .awc-ac-total  { color: var(--awc-text-full) !important; font-weight: 700; font-size: 1rem !important; }
 
 /* ================================================================
-   EQUIPMENT SUBTYPE ROW
-   Injected directly below the Equipment Type field; inherits the
-   parent container's className so it matches the native layout.
-   ================================================================ */
-
-.awc-subtype-row {
-  margin-top: 0;  /* flush against the type row above */
-}
-
-.awc-subtype-row select {
-  width: 100%;
-}
-
-/* ================================================================
    ITEM SHEET FIELDS
    ================================================================ */
 
@@ -221,4 +190,263 @@
 @keyframes awc-border-pulse {
   0%, 100% { border-color: var(--awc-over);            }
   50%       { border-color: rgba(224, 48, 80, 0.3);    }
+}
+
+/* ================================================================
+   HEADER EMBED (character sheet only)
+   sheet-inject.js's mergeHeaderIntoTitleBar() relocates .sheet-header
+   (name/class/level-badge/rest-buttons) out of .window-content and into
+   Foundry's own .window-header — the actual title-bar row holding the
+   window controls, confirmed live at a fixed ~36px tall. As a flex child
+   there it sits on the SAME line as those controls automatically; no
+   overlap-margin arithmetic between two stacked boxes needed anymore.
+   Several hardcoded-px children (level badge, inspiration, rest buttons)
+   still don't scale with the header's new size and need their own
+   override regardless of which parent the header lives in.
+   ================================================================ */
+
+.dnd5e2.sheet.actor.character {
+  /* .sheet-header no longer occupies space inside .window-content (it's
+     relocated into .window-header), so nothing needs reserving here —
+     nav.tabs' `top: calc(var(--dnd5e-sheet-header-height) + 1rem)` is the
+     only other consumer of this variable on this sheet type. */
+  --dnd5e-sheet-header-height: 0px;
+}
+
+/* Explicit inset/gap here rather than trusting whatever Foundry core's
+   base .window-header padding/margins happen to be (not visible from this
+   module's files — core client CSS isn't part of the system/module data
+   this codebase can inspect) — controls left-edge inset AND the spacing
+   between rest-buttons/edit-toggle/kebab/bookmark/person/close directly,
+   since those are still native elements that may carry their own margins
+   tuned for a roomier native layout. Neutralizing those individually
+   below is what actually closes the gaps; this just sets the one
+   consistent small gap we DO want between them. */
+.dnd5e2.sheet.actor.character .window-header {
+  overflow: visible;
+  align-items: center;
+  padding-inline: 0.3em;
+  gap: 0.3em;
+  /* dnd5e.css:4461-4467's generic `.window-header { margin-block-end:
+     calc(var(--font-size-24) + 6px); }` (~30px) reserves space below the
+     icon row for h1.window-title, absolutely positioned down into that
+     margin. Confirmed live via DevTools as the actual source of the gap
+     below the header on every tab — h1/h2 stay in the DOM (harmless,
+     empty/invisible) but no longer need this reserved space since the
+     embedded header already shows the name/class directly in the icon
+     row, making that native title redundant. */
+  margin-block-end: 0;
+}
+
+.dnd5e2.sheet.actor.character .window-header > :not(.sheet-header) {
+  margin: 0;
+}
+
+/* Overrides the native `.sheet-header { flex: 0 0 var(--dnd5e-sheet-header-
+   height); }` — higher specificity (extra .window-header + .awc-embedded-
+   header) wins regardless of stylesheet load order. Sized to its own
+   content (flex: 0 1 auto — no flex-grow) rather than stretching to fill
+   the row, so the identity group hugs its content tightly instead of
+   padding out an oversized box. margin-inline-end: auto does the actual
+   space-claiming instead: it eats ALL the row's free space in the ONE gap
+   right after this element, pushing .window-header's existing children
+   (rest-buttons, edit-mode toggle, control buttons — all still flex:none)
+   into a tight cluster at the true right edge, without touching
+   .window-header's own justify-content. order: -1 keeps this first
+   regardless of DOM position. */
+.dnd5e2.sheet.actor.character .window-header .sheet-header.awc-embedded-header {
+  flex: 0 1 auto;
+  order: -1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  /* .window-header's own padding-inline (above) now provides the left
+     inset — adding more here would just double up. */
+  padding-inline: 0;
+  margin-block: 0;
+  margin-inline: 0 auto;
+  border-radius: 0;
+}
+
+/* mergeHeaderIntoTitleBar() moves level-badge and inspiration out of
+   .right and into .left, right around the name, and boon-badge (rare —
+   epic boon) after the class text — so this is the whole left-aligned
+   identity strip: level, name, inspiration, class. No flex-grow here
+   either — sheet-header itself no longer stretches, so this just sizes to
+   its own content within it. (Multiclass entries wrapping in after the
+   class text is a later concern, not something this needs to reserve
+   dead space for up front.) */
+/* Native rule `.sheet-header > .left { padding: 0 1.5rem 0 3rem; ... }`
+   (dnd5e.css:8709-8714) reserved 3rem/48px on the left to keep the name
+   clear of the portrait art bleeding up into the old 170px header. My
+   override never touched `padding` specifically (only display/flex-
+   direction/align-items/gap/min-width), so despite being MORE specific
+   overall, that native declaration was the only rule setting padding for
+   this element and kept applying regardless — the actual source of the
+   left-edge gap, found by reading the native rule directly rather than
+   guessing at margins further out. */
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+  padding: 0;
+}
+
+/* Native rule `.sheet-header > .right .level-badge { margin-left: auto; }`
+   (dnd5e.css:8744-8747) was tuned to push the badge to the right edge of
+   the old .right column. It shouldn't match anymore now that level-badge
+   lives in .left instead of .right, but margin-left:0 here makes that
+   explicit rather than trusting the move alone — this is exactly the
+   "space to the left of everything" symptom auto margins produce. */
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .level-badge {
+  position: static;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-size: 0.85rem;
+  margin-left: 0;
+}
+
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .document-name,
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left input.document-name {
+  flex: none;
+  font-size: 1.2rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+/* dnd5e's own inspiration visuals (background icon, drop-shadow, the
+   pulsating "active" ring) are declared entirely under the native
+   `.sheet-header > .right .inspiration` selector (dnd5e.css:8749-8790) —
+   a DIRECT-CHILD match on .right specifically. Moving the element into
+   .left broke every one of those rules at once (not a position:static
+   issue — that was a wrong first guess), so they're fully replicated
+   here against the new location rather than patched piecemeal. Switched
+   from the native absolute positioning (calculated relative to .right's
+   old box) to static so it just flows inline with the rest of .left. */
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .inspiration {
+  --size: 22px;
+  flex: none;
+  position: static;
+  padding: 0;
+  width: var(--size);
+  height: var(--size);
+  background: transparent url("/systems/dnd5e/ui/inspiration.webp") no-repeat center / contain;
+  filter: drop-shadow(0 3px 4px var(--dnd5e-shadow-45));
+  display: grid;
+  place-content: center;
+}
+
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .inspiration:hover {
+  box-shadow: none;
+  filter: drop-shadow(0 3px 4px rgba(255, 255, 255, 0.5));
+}
+
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .inspiration[aria-pressed="true"]::after {
+  content: "";
+  width: calc(var(--size) / 4 - 1px);
+  height: calc(var(--size) / 4 - 1px);
+  background: white;
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px 3px var(--color-shadow-highlight);
+  animation: pulsate-inspiration 3s infinite ease-in-out;
+}
+
+@media (prefers-reduced-motion) {
+  .dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .inspiration[aria-pressed="true"]::after {
+    animation: none;
+  }
+}
+
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .class {
+  flex: none;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.dnd5e2.sheet.actor.character .sheet-header.awc-embedded-header .left .boon-badge {
+  flex: none;
+  position: static;
+}
+
+/* No room for the XP bar/label in a single thin row — still visible on
+   the Details tab, this just isn't the place for it anymore. */
+.dnd5e2.sheet.actor.character .sheet-header .right .xp-label,
+.dnd5e2.sheet.actor.character .sheet-header .right .xp-bar {
+  display: none;
+}
+
+/* Relocated out of .sheet-header entirely by mergeHeaderIntoTitleBar() —
+   becomes a direct sibling inside .window-header, right after sheet-
+   header's flex-grow block, landing it at the START of the right-aligned
+   cluster (before the native edit-mode toggle and window controls, which
+   stay later in DOM order and so render after it). Needs its own
+   centering/sizing here since it no longer inherits anything from the
+   .right wrapper it used to live in — that's also the fix for it
+   previously "sitting higher than the rest of the row": it had kept the
+   native rest-buttons' position:absolute top-offset, tuned for the old
+   170px header, until this rule resets it to position:static. */
+.dnd5e2.sheet.actor.character .window-header .sheet-header-buttons.awc-relocated-rest-buttons {
+  position: static;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 0.25em;
+}
+
+.dnd5e2.sheet.actor.character .window-header .sheet-header-buttons.awc-relocated-rest-buttons button {
+  width: 24px;
+  height: 24px;
+}
+
+/* No overlap trick needed here anymore — .sheet-header lives inside
+   .window-header now (see mergeHeaderIntoTitleBar()), not stacked on top
+   of it inside .window-content, so .window-content just starts at its
+   own natural top with no header-space to reserve or cancel. */
+.dnd5e2.sheet.actor.character .window-content {
+  margin-block-start: 0;
+}
+
+/* .ability-scores (the SKILLS/SAVES overlay — data-application-part=
+   "abilityScores") is `position: absolute; top: 0; pointer-events: none`
+   (dnd5e.css:9551-9557) — a floating overlay across every tab, not tied
+   to tab-body flow, confirmed via DevTools as sitting flush with
+   .sheet-body's own top already. The gap was never here — it's
+   .rows { padding: 76px 0 76px 24px } (dnd5e.css:9559-9560) inside it,
+   tuned to visually clear the old tall header/sidebar zone. A @container
+   (min-width: 700px) variant (dnd5e.css:9645-9652) makes it even worse —
+   148px — on wider windows. Both need overriding; it's an overlay
+   (pointer-events: none except its own score badges), so tightening this
+   only affects its own visual position, never pushes or affects anything
+   else on the sheet. */
+.dnd5e2.sheet.actor.character .ability-scores .rows {
+  padding-top: 30px;
+}
+
+@container (min-width: 700px) {
+  .dnd5e2.sheet.actor.character .ability-scores .rows {
+    padding-top: 30px;
+  }
+}
+
+/* .rows uses flex-wrap, and .top (dnd5e.css:9576-9580) is a spacer with
+   its own min-height: 72px plus a large padding-right — reserves an
+   entire empty wrapped row above the actual STR/DEX/CON/etc badges below
+   a 700px container width. dnd5e already neutralizes this exact thing
+   itself (min-height: unset; order: 2) but only inside its own
+   @container (min-width: 700px) block (dnd5e.css:9653-9658) — applying
+   it unconditionally here instead of duplicating that container query,
+   since there's no reason this spacer should behave differently above vs
+   below 700px now that the header it was sized for is gone. */
+.dnd5e2.sheet.actor.character .ability-scores .rows .top {
+  padding: 0;
+  margin: 0;
+  min-height: unset;
+  order: 2;
 }
