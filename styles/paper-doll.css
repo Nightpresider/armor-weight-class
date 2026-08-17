@@ -386,6 +386,45 @@
   height: 440px;
 }
 
+/* .card's own background (dnd5e.css: background: var(--dnd5e-background-
+   alt-2), a light grey panel tone) shows through anywhere nothing else
+   covers it. The doll's own dark background (.awc-doll-background) covers
+   .portrait, but .stats below it has no background of its own — so that
+   native lighter grey was visible as a seam in the gap under the HD bar.
+   The doll's TRUE visible tone isn't the flat --awc-doll-main-color alone
+   — .awc-doll-gradient and .awc-doll-gradient-2 both darken toward black
+   most heavily at the edges (including the bottom edge, right where it
+   meets .stats), so matching the flat, un-gradient-treated color still
+   left a visible seam — just a different-colored box instead of grey.
+   Rather than keep chasing a flat color that happens to match a
+   gradient-darkened edge, removing the background entirely instead —
+   confirmed the actual request was to see the sheet's own true background
+   through this area, not to patch it with any solid color. .card's own
+   native background (the ORIGINAL cause — dnd5e.css's alt-2 grey) has to
+   go transparent too, or it would just show through here again. Safe to
+   do unscoped: .portrait already paints its own fully opaque doll
+   background over itself regardless, so .card's own background was never
+   visible anywhere except this exact area anyway. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card {
+  background: transparent;
+}
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats {
+  background: transparent;
+}
+
+/* HP/HD bars: sit BEHIND the doll instead of in front of it like the rest
+   of .stats (AC badge/pips, which keep the inherited translateZ(3px) — no
+   change there, still meant to read as an overlay ON the doll per the
+   original mockup). .portrait/the doll itself has no explicit transform
+   of its own in this 3D context, so it sits at depth 0 — translateZ here
+   needs to be negative to land behind that. Only .meter-group gets its
+   own explicit depth; everything else in .stats still inherits .stats'
+   own translateZ(3px) unchanged. Margin bumped up for "a bit lower" per
+   request — was 8px above; tune further live. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group {
+  transform: translateZ(-5px);
+}
+
 /* .card uses a real 3D stacking context (transform-style: preserve-3d,
    dnd5e.css:8905-8924) specifically so it can control which children sit
    in front of which via translateZ — an explicit value wins outright
@@ -548,32 +587,101 @@
    tune both the offset and left/right inset live. */
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips {
   position: absolute;
-  bottom: -137px;
+  /* top, not bottom: an earlier version anchored these to .stats' own
+     BOTTOM edge (bottom: -137px) — which moves whenever ANYTHING earlier
+     in .stats changes height, including totally unrelated tweaks like the
+     HP bar's own margin-top. Confirmed live: zeroing that margin (to close
+     up wasted space above the HP bar) shrank .stats' total height, which
+     silently dragged the pips down along with it, since their anchor
+     point moved. .stats' TOP edge never moves regardless of what's tuned
+     further down inside it — anchoring here instead means the pips and
+     the HP/HD spacing can be tuned independently of each other from now
+     on. ~215px is a reasoned re-derivation of where the pips previously
+     landed (not a live measurement) — expect to tune live same as before,
+     but a future HP/HD margin change shouldn't move this anymore. */
+  top: 100px;
   /* Explicit own depth in .card's preserve-3d context, independent of
-     .stats' translateZ(3px) — safety net so pushing bottom further
-     negative can't run into anything else (the death-tray sits at
+     .stats' translateZ(3px) — safety net so pushing this further
+     down/up can't run into anything else (the death-tray sits at
      translateZ(-1px), so this alone shouldn't be the cause of pips
-     disappearing at -90/-100px, but ruling it out directly is cheaper
-     than more guessing). */
+     disappearing, but ruling it out directly is cheaper than more
+     guessing). */
   transform: translateZ(10px);
 }
 
+/* Same fix as the AC badge overlap earlier: at -137px the pips row now
+   visually lands right on top of .death-tab (the skull toggle button,
+   character-sidebar.hbs — separate DOM entirely, lives in .death-tray,
+   not .stats), and since the pips sit at an explicit translateZ(10px)
+   above the death-tray's own translateZ(-1px), they win any hit-test in
+   the overlap — including their own invisible padding (dnd5e.css's base
+   .pips rule: padding: 10px) and the gaps between individual pip circles,
+   not just the circles themselves. That's what was making the skull hard
+   to click even though it visually sits between two pips, not under one.
+   pointer-events: none on the container (with :auto restored on the
+   actual .pip circles, the only things that should intercept anything)
+   makes the rest of the box — all the space the skull actually needs —
+   click-through. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips {
+  pointer-events: none;
+}
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips .pip {
+  pointer-events: auto;
+}
+
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips:first-of-type {
-  left: 9rem;
+  left: 9.3rem;
 }
 
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips:last-of-type {
-  right: 9rem;
+  right: 9.3rem;
 }
 
-/* Pushes the HP/HD block down away from the doll above it — targets only
-   the meter-group right after .lozenges (i.e. the HP one; HD follows
-   immediately after in normal flow, so it comes along for free) rather
-   than every .meter-group, which would also add extra gap BETWEEN HP and
-   HD themselves via the native `.meter-group + .meter-group` rule.
-   Reasoned starting guess — tune live. */
+/* dnd5e never explicitly hides .death-saves (the death-save pip row) when
+   .death-tray is collapsed — it only ever moves via .death-tray's own top
+   (calc(100% - var(--tray-height)) closed, calc(100% - var(--lip)) open),
+   and relies entirely on .card's own opaque background to mask whatever
+   part of .death-saves pokes up past the tray's closed window. Now that
+   .card/.stats are transparent (above), that reliance shows through as a
+   visible box behind the HP/HD bars. Explicit opacity/visibility toggle
+   here instead, keyed off the SAME .open class dnd5e already adds on
+   click (character-sidebar.hbs) — same end result (invisible while
+   collapsed) without depending on background opacity to achieve it.
+   Same opacity+delayed-visibility idiom already used for
+   .awc-doll-hover-tooltip (paper-doll.css's Tooltip section). */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .death-tray .death-saves {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 200ms ease, visibility 0s 200ms;
+}
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .death-tray.open .death-saves {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 200ms ease;
+}
+
+/* Used to push the HP/HD block down away from the VISIBLE lozenges row —
+   .lozenges is now display:none (hideNativeLozenges(), sheet-inject.js),
+   but this sibling selector still matches a hidden element fine (CSS
+   matching is DOM-structure-based, not visibility-based), so it kept
+   reserving a gap below nothing, wasting vertical space between the doll
+   and the HP bar. Zeroed out — if the doll's own bottom edge still needs
+   a little breathing room from the HP bar, add a small positive value
+   back here rather than restoring anything close to the old 42px. */
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .lozenges + .meter-group {
-  margin-top: 42px;
+  margin-top: 20px; /* "a bit lower" per request — was 8px; tune further live */
+}
+
+/* The skull toggle (.death-tab) lives inside .death-tray, positioned via
+   top: calc(100% - var(--tray-height)) (dnd5e.css:9095-9104) — measured
+   against .card's OWN FULL height (doll + stats + everything), completely
+   independent of where the HP/HD bars happen to end. --tray-height is how
+   much of the tray shows when closed (just the tab); increasing it moves
+   the tab further UP the page (a bigger value subtracted from 100% lands
+   `top` higher). Native default: 72px. No AWC override existed for this
+   yet — first guess below, tune live. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .death-tray {
+  --tray-height: 72px; /* native default — raise this to move the skull up */
 }
 
 /* Matches the portrait frame's own rounded top corners (dnd5e.css's

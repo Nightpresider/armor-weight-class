@@ -596,8 +596,28 @@ function injectACBreakdown(el, ac) {
     // is what actually stops it — #_onHoverActor bails out immediately
     // when that attribute is absent, leaving whatever data-tooltip
     // content is already there (ours) alone.
-    const innerAcValue = acEl.querySelector("[data-attribution]");
+    // Matches either a freshly-native-rendered element (still carrying
+    // data-attribution, not yet processed) OR one we've already processed
+    // on an earlier call against this same persistent node (identified by
+    // our own .awc-ac-badge-value class, added below) — this second half
+    // is what makes the lookup idempotent across repeated calls. Without
+    // it, a later call (e.g. via _refreshActorSheet, which patches the
+    // existing DOM rather than triggering a fresh dnd5e render) fails to
+    // re-find this element — because data-attribution was already deleted
+    // last time — and wrongly falls into the "no inner div" fallback
+    // below, setting a second, competing tooltip on the outer .ac-badge
+    // while this element's already-wired listeners are still active.
+    // Confirmed live: both tooltips fired on the same hover.
+    const innerAcValue = acEl.querySelector("[data-attribution], .awc-ac-badge-value");
     if (innerAcValue) {
+      // Clears whatever the outer badge's own fallback branch (below) may
+      // have wrongly set here during the stale-lookup bug described
+      // above — without this, a tooltip already sitting on the outer
+      // .ac-badge from before this fix landed would keep firing alongside
+      // the inner element's correct one until a full dnd5e re-render
+      // happened to wipe .ac-badge clean on its own.
+      delete acEl.dataset.tooltip;
+      delete acEl.dataset.tooltipDirection;
       delete innerAcValue.dataset.attribution;
       delete innerAcValue.dataset.attributionCaption;
       // dnd5e's _applyTooltips() (dnd5e.mjs) also set data-tooltip-class=
