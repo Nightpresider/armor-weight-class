@@ -1,0 +1,28 @@
+<div>
+  <p class="hint">{{localize "AWC.App.MovementDisplayConfig.Hint"}}</p>
+
+  {{#each types}}
+  <div class="form-group">
+    <label>{{this.label}}</label>
+    <div class="form-fields">
+      <span class="awc-movement-current">{{localize "AWC.App.MovementDisplayConfig.Current"}}: {{this.value}} {{../units}}</span>
+      <input type="number" name="flags.armor-weight-class.movementDisplay.{{this.key}}" value="{{this.value}}" min="0" step="1">
+      {{#if (eq this.key "fly")}}
+      <label class="checkbox">
+        <input type="checkbox" name="flags.armor-weight-class.movementDisplay.hover" {{#if ../hover}}checked{{/if}}>
+        {{localize "DND5E.MOVEMENT.Hover"}}
+      </label>
+      {{/if}}
+    </div>
+  </div>
+  {{/each}}
+
+  <div class="form-group">
+    <label>{{localize "DND5E.MOVEMENT.FIELDS.units.label"}}</label>
+    <select name="flags.armor-weight-class.movementDisplay.units">
+      {{#each unitsOptions}}
+      <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+      {{/each}}
+    </select>
+  </div>
+</div>

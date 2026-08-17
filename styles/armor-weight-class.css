@@ -88,11 +88,12 @@
   animation: awc-pulse 1s ease-in-out infinite;
 }
 
-/* AWC's own bar no longer inserts into .encumbrance.card (see
-   injectCapacityBar's docstring in sheet-inject.js — parked pending Phase
-   2, which renders it atop the embedded doll instead). Native weight
-   meter stays visible in the meantime rather than leaving no encumbrance
-   indicator at all until Phase 2 lands. */
+/* AWC's own bar no longer inserts into .encumbrance.card — Phase 2 renders
+   it atop the embedded doll instead (see doll-embed.js's
+   buildCapacityBarHTML — same markup/logic, new home), styled for that
+   context in paper-doll.css's DOLL EMBED section. Native weight meter
+   stays visible on the Inventory tab regardless, since the embedded bar
+   isn't there to look at while browsing inventory. */
 
 /* ================================================================
    AC BREAKDOWN
@@ -449,4 +450,73 @@
   margin: 0;
   min-height: unset;
   order: 2;
+}
+
+/* ================================================================
+   SKILLS HEADER PROFICIENCY
+   sheet-inject.js's injectSkillsProficiency() appends this span into the
+   Skills box's own <h3> (icon + "SKILLS" text). margin-inline-start: auto
+   on it claims all the row's remaining space for itself (to its own
+   left), pushing it to the far right regardless of the parent's own
+   justify-content:center
+   (dnd5e.css:3820-3824) — same technique used for the compact header's
+   left/right split (armor-weight-class.css's HEADER EMBED section).
+   ================================================================ */
+
+.awc-skills-proficiency {
+  margin-inline-start: auto;
+  color: var(--dnd5e-color-gold, var(--color-text-title));
+  font-size: var(--font-size-11);
+  text-transform: uppercase;
+}
+
+/* ================================================================
+   AC BADGE VALUE POSITION & SIZE
+   font-size halved from dnd5e.css:6505's native var(--font-size-23) (23px)
+   via calc(), so it stays tied to that source value instead of a
+   hardcoded px number.
+
+   Vertical position is intentionally NOT done via .ac-badge's own
+   line-height (an earlier version of this rule pushed it as far as
+   line-height: 135px against the badge's native 68px height — dnd5e
+   vertically centers the number that way by default, dnd5e.css:6501,
+   line-height: 62px). A parent line-height that oversized inflates the
+   parent's own line-box well beyond its 68px box, and since overflow
+   isn't clipped, that overflow area is still hoverable/clickable —
+   plausibly bleeding down into whatever sits just below the badge (the
+   doll), which lines up with the doll's shield slot reportedly still
+   triggering the AC tooltip and blocking its own clicks. Padding on the
+   small inner .awc-ac-badge-value element instead (below) shifts the
+   number without inflating the outer badge's box at all.
+   ================================================================ */
+
+.dnd5e2.sheet.actor.character .ac-badge {
+  font-size: calc(var(--font-size-23) / 2); /* native default: 23px */
+}
+
+/* ================================================================
+   AC BADGE TOOLTIP TRIGGER SIZE & POSITION
+   sheet-inject.js's injectACBreakdown() puts the AC-breakdown tooltip on
+   this inner div (the one dnd5e itself renders the number into, .ac-badge
+   .awc-ac-badge-value) — it's the ONLY element carrying data-tooltip for
+   AC now (see that function's comments for why the outer .ac-badge no
+   longer also gets one, in either edit or view mode). display:inline-block
+   shrinks its own hover hit-box to fit the text (centered via .ac-badge's
+   own text-align:center, no margin:auto needed) instead of stretching
+   block-level to the badge's full width; line-height:normal stops
+   inheriting .ac-badge's own line-height.
+   transform (not padding/margin) nudges the number down: a translate
+   moves the element's rendered box AND its hit-area together without
+   growing the box itself — padding-top would add that many px directly
+   to the hit-box's own height, working against "hit-box no bigger than
+   the number itself".
+   ================================================================ */
+
+.dnd5e2.sheet.actor.character .ac-badge .awc-ac-badge-value {
+  display: inline-block;
+  line-height: normal;
+  transform: translateY(0); /* reset to safe baseline — was 60px, which had drifted far enough
+    to visually land inside the doll below it. Re-tune from here, in small steps, once
+    the doll's own interactivity is confirmed solid with AC display off (see "Show AC
+    Breakdown" world setting). */
 }

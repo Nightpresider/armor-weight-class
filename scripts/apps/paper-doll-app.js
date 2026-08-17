@@ -30,7 +30,6 @@
 import { MODULE_ID, FLAG_NS, SLOT_TYPES, ITEM_MARKERS } from "../constants.js";
 import { getSlotMap, getItemSlot, itemHasMarker } from "../slots.js";
 import { getHandSlotState, getRingSlotState, getExemptItem, actorHasExemptCapableItem, swapHandSlot, swapRingSlot, describeHandBlocker } from "../paired-slots.js";
-import { getACBreakdown } from "../ac.js";
 import { AWCApplication } from "./awc-application.js";
 
 const LOG = `${MODULE_ID} |`;
@@ -206,6 +205,95 @@ export async function clearSlotImage(slot) {
   await game.settings.set(MODULE_ID, "dollLayout", layout);
 }
 
+// ─── Slot addressing / interaction primitives ─────────────────────────────
+// Extracted as free functions (parameterized on an explicit `actor` rather
+// than `this.actor`) so scripts/doll-embed.js can reuse the exact same
+// logic for the sheet-embedded doll — AWCPaperDoll's own methods below are
+// now thin wrappers delegating to these, so the pop-out's behavior is
+// unchanged.
+
+/** Reads a doll slot descriptor back off its DOM element's data-* attributes. */
+export function slotFromElement(el) {
+  return { kind: el.dataset.kind, key: el.dataset.key, pos: el.dataset.pos, side: el.dataset.side, box: el.dataset.box };
+}
+
+/** Resolves the item currently occupying `slot` for `actor` — re-derived fresh every call, never cached. */
+export function itemForSlot(actor, slot) {
+  if (slot.kind === "slot") {
+    const map = getSlotMap(actor);
+    const group = GROUPED_SLOTS[slot.key];
+    if (group) return group.keys.map(k => map[k]).find(Boolean) ?? null;
+    return map[slot.key] ?? null;
+  }
+  if (slot.kind === "hand") {
+    const state = getHandSlotState(actor);
+    return state[slot.box]?.item ?? null;
+  }
+  if (slot.kind === "ring") {
+    const state = getRingSlotState(actor);
+    return state[slot.pos] ?? null;
+  }
+  if (slot.kind === "exempt") {
+    return getExemptItem(actor);
+  }
+  return null;
+}
+
+/** Every currently-unequipped item on `actor` eligible to be dropped/clicked into `slot`. */
+export function eligibleItemsForSlot(actor, slot) {
+  if (slot.kind === "slot") {
+    const group = GROUPED_SLOTS[slot.key];
+    if (group) return actor.items.filter(i => !i.system?.equipped && group.keys.includes(getItemSlot(i)));
+    return actor.items.filter(i => !i.system?.equipped && getItemSlot(i) === slot.key);
+  }
+  if (slot.kind === "hand") {
+    return actor.items.filter(i => !i.system?.equipped
+      && (i.type === "weapon" || (i.type === "equipment" && getItemSlot(i) === "shield"))
+      && !itemHasMarker(i, ITEM_MARKERS.IGNORES_HAND_SLOT));
+  }
+  if (slot.kind === "ring") {
+    return actor.items.filter(i => !i.system?.equipped && getItemSlot(i) === "ring");
+  }
+  if (slot.kind === "exempt") {
+    return actor.items.filter(i => !i.system?.equipped
+      && (i.type === "weapon" || (i.type === "equipment" && getItemSlot(i) === "shield"))
+      && itemHasMarker(i, ITEM_MARKERS.IGNORES_HAND_SLOT));
+  }
+  return [];
+}
+
+/** Equips `item` into `slot`, remembering the specific hand/ring position when the box addresses one. Conflict/capacity resolution runs from the resulting updateItem hook — never duplicated here. */
+export async function equipItemToSlot(item, slot) {
+  const update = { "system.equipped": true };
+  if (slot.kind === "hand" && slot.pos) update[`flags.${FLAG_NS}.handSlot`] = slot.pos;
+  if (slot.kind === "ring") update[`flags.${FLAG_NS}.ringSlot`] = slot.pos;
+  await item.update(update);
+}
+
+/** Hover-tooltip HTML for an equipped item's doll slot: name, AC/damage, resistances, value. */
+export function buildTooltipHTML(actor, item) {
+  const lines = [`<strong>${item.name}</strong>`];
+
+  const acValue = Number(item.system?.armor?.value ?? 0);
+  if (acValue) lines.push(`AC: +${acValue}`);
+
+  if (item.type === "weapon") {
+    const dmgParts = item.system?.damage?.base ?? item.system?.damage?.parts?.[0];
+    const formula = dmgParts?.formula ?? dmgParts?.[0] ?? null;
+    if (formula) lines.push(`Damage: ${formula}`);
+  }
+
+  const resistances = Array.from(item.effects ?? []).flatMap(e => (e.changes ?? [])
+    .filter(c => c.key?.includes("traits.dr") || c.key?.includes("traits.di") || c.key?.includes("traits.dv"))
+    .map(c => c.value));
+  if (resistances.length) lines.push(`Resistances: ${resistances.join(", ")}`);
+
+  const price = item.system?.price?.value;
+  if (price !== undefined) lines.push(`Value: ${price} ${item.system?.price?.denomination ?? "gp"}`);
+
+  return lines.join("<br>");
+}
+
 export class AWCPaperDoll extends AWCApplication {
   constructor(actor) {
     super();
@@ -322,54 +410,21 @@ export class AWCPaperDoll extends AWCApplication {
   }
 
   // ─── Slot addressing helpers ──────────────────────────────────────────────
+  // Thin delegates to the free functions above (shared with doll-embed.js) —
+  // kept as instance methods so the rest of this class's code (and any
+  // outside caller still expecting these names) is unaffected by the
+  // extraction.
 
   _slotFromElement(el) {
-    return { kind: el.dataset.kind, key: el.dataset.key, pos: el.dataset.pos, side: el.dataset.side, box: el.dataset.box };
+    return slotFromElement(el);
   }
 
   _itemForSlot(slot) {
-    const actor = this.actor;
-    if (slot.kind === "slot") {
-      const map = getSlotMap(actor);
-      const group = GROUPED_SLOTS[slot.key];
-      if (group) return group.keys.map(k => map[k]).find(Boolean) ?? null;
-      return map[slot.key] ?? null;
-    }
-    if (slot.kind === "hand") {
-      const state = getHandSlotState(actor);
-      return state[slot.box]?.item ?? null;
-    }
-    if (slot.kind === "ring") {
-      const state = getRingSlotState(actor);
-      return state[slot.pos] ?? null;
-    }
-    if (slot.kind === "exempt") {
-      return getExemptItem(actor);
-    }
-    return null;
+    return itemForSlot(this.actor, slot);
   }
 
   _eligibleItemsForSlot(slot) {
-    const actor = this.actor;
-    if (slot.kind === "slot") {
-      const group = GROUPED_SLOTS[slot.key];
-      if (group) return actor.items.filter(i => !i.system?.equipped && group.keys.includes(getItemSlot(i)));
-      return actor.items.filter(i => !i.system?.equipped && getItemSlot(i) === slot.key);
-    }
-    if (slot.kind === "hand") {
-      return actor.items.filter(i => !i.system?.equipped
-        && (i.type === "weapon" || (i.type === "equipment" && getItemSlot(i) === "shield"))
-        && !itemHasMarker(i, ITEM_MARKERS.IGNORES_HAND_SLOT));
-    }
-    if (slot.kind === "ring") {
-      return actor.items.filter(i => !i.system?.equipped && getItemSlot(i) === "ring");
-    }
-    if (slot.kind === "exempt") {
-      return actor.items.filter(i => !i.system?.equipped
-        && (i.type === "weapon" || (i.type === "equipment" && getItemSlot(i) === "shield"))
-        && itemHasMarker(i, ITEM_MARKERS.IGNORES_HAND_SLOT));
-    }
-    return [];
+    return eligibleItemsForSlot(this.actor, slot);
   }
 
   // ─── Interaction: click ───────────────────────────────────────────────────
@@ -416,16 +471,7 @@ export class AWCPaperDoll extends AWCApplication {
   }
 
   async _equip(item, slot) {
-    const update = { "system.equipped": true };
-    // `slot.pos` is the specific physical hand this box addresses (known
-    // even for an "open" box — see getHandSlotState()) — equipping through
-    // it commits to that exact hand rather than leaving placement to
-    // validateAndEquipHandItem's generic auto-fill.
-    if (slot.kind === "hand" && slot.pos) update[`flags.${FLAG_NS}.handSlot`] = slot.pos;
-    if (slot.kind === "ring") update[`flags.${FLAG_NS}.ringSlot`] = slot.pos;
-    await item.update(update);
-    // Conflict/capacity resolution (slots.js / paired-slots.js) runs from the
-    // resulting updateItem hook — this app never duplicates that logic.
+    await equipItemToSlot(item, slot);
   }
 
   // ─── Interaction: right-click (unequip, or set a custom empty-slot image) ──
@@ -536,27 +582,7 @@ export class AWCPaperDoll extends AWCApplication {
   }
 
   _buildTooltipHTML(item) {
-    const lines = [`<strong>${item.name}</strong>`];
-
-    const acBreakdown = getACBreakdown(this.actor);
-    const acValue = Number(item.system?.armor?.value ?? 0);
-    if (acValue) lines.push(`AC: +${acValue}`);
-
-    if (item.type === "weapon") {
-      const dmgParts = item.system?.damage?.base ?? item.system?.damage?.parts?.[0];
-      const formula = dmgParts?.formula ?? dmgParts?.[0] ?? null;
-      if (formula) lines.push(`Damage: ${formula}`);
-    }
-
-    const resistances = Array.from(item.effects ?? []).flatMap(e => (e.changes ?? [])
-      .filter(c => c.key?.includes("traits.dr") || c.key?.includes("traits.di") || c.key?.includes("traits.dv"))
-      .map(c => c.value));
-    if (resistances.length) lines.push(`Resistances: ${resistances.join(", ")}`);
-
-    const price = item.system?.price?.value;
-    if (price !== undefined) lines.push(`Value: ${price} ${item.system?.price?.denomination ?? "gp"}`);
-
-    return lines.join("<br>");
+    return buildTooltipHTML(this.actor, item);
   }
 
   // ─── Header controls ──────────────────────────────────────────────────────

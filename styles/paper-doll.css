@@ -83,6 +83,14 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  /* Defensive: guarantees every slot wins any stacking conflict with
+     something unrelated drifting on top of it within the doll's own
+     window (e.g. the AC badge overlap incident) — a positioned element
+     with z-index:auto (the default) doesn't reliably win against other
+     positioned content nearby. Kept below .awc-doll-hover-tooltip's own
+     z-index:5, which still needs to paint above the slots themselves. */
+  position: relative;
+  z-index: 2;
 }
 
 .awc-doll-slot.awc-doll-empty {
@@ -320,3 +328,308 @@
 .awc-marker-reference code {
   font-size: 0.75rem;
 }
+
+/* ================================================================
+   DOLL EMBED (character sheet only)
+   scripts/doll-embed.js replaces the native portrait <img>/<video> inside
+   .sidebar .card .portrait with the same doll markup/logic the pop-out
+   uses. Widening --dnd5e-sheet-sidebar-width lets the doll's existing
+   2-column layout (grid-template-columns: 2fr 5fr 2fr in .awc-doll-top,
+   above) drop in with minimal rework, per the confirmed Phase 2 decision —
+   at ~9fr total and a ~58px slot size needing roughly 70-90px per 2fr
+   column, ~400px comfortably fits it (vs. the pop-out's own 420px, which
+   includes window chrome this doesn't need to). Starting values below are
+   reasoned from the doll's own slot/column sizing, not measured live —
+   expect to tune against the actual rendered sheet.
+   ================================================================ */
+
+.dnd5e2.sheet.actor.character {
+  /* 400px landed right at the edge of fitting the doll's own bottom row
+     (melee-pair + ring/necklace/ring + ranged-pair, all in one line via
+     justify-content:space-between) — ~147px available for the ring row vs
+     ~149px it actually needs, close enough that the ring row's flex-wrap
+     kicked in and pushed the third ring onto its own line. +20px clears
+     that margin comfortably. */
+  --dnd5e-sheet-sidebar-width: 420px;
+}
+
+/* --awc-doll-slot-size (58px) is a :root variable shared with the pop-out
+   — overridden here, scoped to .awc-doll-embedded specifically, so only
+   the embed shrinks (the pop-out, with its own dedicated 420x600 window,
+   doesn't need to). This is the main lever for the embed's total height:
+   the left/right columns each stack 6 slots, so every pixel trimmed off
+   slot size saves roughly 6x that off the doll's total height — the
+   biggest cost in the sidebar's vertical budget, coming directly out of
+   room .favorites (flex: 1, absorbing whatever's left) would otherwise
+   get. CSS custom properties cascade to descendants normally, so this
+   reaches every .awc-doll-slot inside without needing to touch the
+   template or JS at all. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded {
+  --awc-doll-slot-size: 46px;
+}
+
+/* .portrait's native height comes entirely from its <img>/<video> child
+   (min-height: var(--dnd5e-sheet-sidebar-width), max-height: 300px —
+   dnd5e.css:8957-9004) — rules that don't apply at all once that child is
+   replaced by the doll's own markup. .awc-doll-content relies on
+   `height: 100%` (paper-doll.css's Content shell section, above), which
+   needs an explicit, definite height on .portrait itself to resolve
+   against — without this, the doll would collapse to zero height. At the
+   46px slot size above: left/right columns each stack 6 slots (~300px),
+   plus the lower exempt/hand/ring row (~55-105px) and ~30px for the
+   capacity bar rendered as a normal-flow sibling above the doll content
+   (see .awc-capacity-bar's own ~24px min-height + margin — without this
+   extra room the doll's own height:100% box would overflow .portrait's
+   bottom edge by that amount) — ~440px covers that budget, down from
+   590px at the native 58px slot size. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait {
+  height: 440px;
+}
+
+/* .card uses a real 3D stacking context (transform-style: preserve-3d,
+   dnd5e.css:8905-8924) specifically so it can control which children sit
+   in front of which via translateZ — an explicit value wins outright
+   within that context, regardless of DOM order. An earlier version of
+   this rule bumped .portrait's own depth above .stats' native
+   translateZ(2px), meant to keep the doll's slots clickable in front of
+   AC badge overlap — backwards: confirmed live, the native info needs to
+   read as an overlay ON the doll (per the mockup), not the other way
+   around, and giving .portrait the win instead hid the AC badge/lozenges
+   behind the doll's own background. .stats gets the higher depth here
+   instead. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats {
+  transform: translateZ(3px);
+}
+
+/* "Moving the AC display and other buttons up" per the mockup's intent of
+   overlaying stats onto the doll rather than stacking them below it as a
+   separate block — native values (-21px for the AC badge, -7px for the
+   lozenges row, dnd5e.css:8993/9027-9033) were tuned for the original
+   ~230-300px portrait. First pass scaled these up for a 590px-tall doll
+   (-110px/-30px); rescaled again now that the doll itself shrank to
+   ~440px (440/590 ≈ 0.75x) so the overlap still lands proportionally in
+   the same spot relative to the doll's own bottom edge, rather than
+   reaching too far up a now-shorter doll. Reasoned, not measured — expect
+   to tune live. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .ac-badge {
+  margin-top: -53px; /* confirmed clear of both the necklace and exempt slots */
+  /* Removes the native shield-shaped background graphic
+     (background-image: url("ui/ac-badge.webp"), dnd5e.css ~6497) — just
+     the number remains. */
+  background-image: none;
+}
+
+/* .stats sits at translateZ(3px) (above, .card's own preserve-3d context)
+   — deliberately in FRONT of the doll, so the negative margin above can
+   pull it up to overlay the doll's art. The cost: .ac-badge's own
+   bounding box still intercepts clicks/hover everywhere within it,
+   including its fully-transparent areas (no background image, no border)
+   where nothing is visibly drawn — confirmed live: even once the number
+   itself was repositioned clear of the exempt slot, the slot underneath
+   stayed unclickable, because hit-testing goes by box geometry and
+   z-stacking, not by what's actually painted. Rather than keep chasing a
+   position where the (fixed-size) box happens not to geometrically
+   overlap any slot, make the box itself click-through everywhere except
+   the two things inside it that should genuinely be interactive — the
+   number (.awc-ac-badge-value, for the tooltip) and the edit-mode
+   config-button gear icon — restored individually below since
+   pointer-events: none is inherited by descendants by default. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .ac-badge {
+  pointer-events: none;
+}
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .ac-badge .awc-ac-badge-value,
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .ac-badge .config-button {
+  pointer-events: auto;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .lozenges {
+  margin-top: -120px;
+  justify-content: center;
+  gap: 0;
+}
+
+/* Native .lozenge is width:68px; height:45px (dnd5e.css:9034-9040) — the
+   SVG background uses background-size:contain, so shrinking these scales
+   the whole diamond shape down cleanly. The text inside (the number and
+   INITIATIVE/SPEED/PROFICIENCY label) is dnd5e's own font-size, not tied
+   to this box size, so it won't shrink to match — worth watching for
+   cramping if this goes much smaller than the guess below. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .lozenges .lozenge {
+  width: 52px;
+  height: 34px;
+  /* Native DOM order is .value (number/icon) then .label (text) — with
+     justify-content:space-between (native, unchanged) that puts value on
+     top, label on bottom. column-reverse flips which end each lands on
+     without needing to touch the template. */
+  flex-direction: column-reverse;
+}
+
+/* Native markup (character-sidebar.hbs:128-165/168-189) is
+   .meter-group > .label ("HIT POINTS"/"HIT DICE" title) as a SIBLING
+   BEFORE .meter (the bar) — not inside it. There's a second, different
+   .label nested inside .meter itself (the "32/32" value text) that this
+   doesn't touch. Absolutely positioning the outer title over its sibling
+   bar is what achieves "inside the bar" without restructuring the
+   template — .label leaving normal flow also means .meter naturally
+   slides up to fill the space it vacated. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group {
+  position: relative;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group > .label {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  /* Nudges the title right off the bar's left edge, clearing the
+     value/max fraction now centered in the same bar (below). */
+  padding-inline-start: 24px;
+  pointer-events: none;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group > .label .config-button {
+  pointer-events: all;
+}
+
+/* The value/max fraction ("32/32", "3/3") is a DIFFERENT, inner .label —
+   nested inside .progress.hit-points (HP) / .meter.hit-dice.progress
+   (HD), the flex row that's these bars' only visible content now that
+   the outer title .label left normal flow above. First attempt set
+   justify-content:center on the CONTAINER (.progress.hit-points /
+   .meter.hit-dice.progress) and it had no visible effect — rather than
+   keep guessing why that container's flex behavior didn't cooperate,
+   this instead forces the fraction's OWN .label to span the full bar
+   width and center its own content, which doesn't depend on getting the
+   parent's exact flex context right. HP and HD need separate selectors
+   since HP's .label lives one level deeper (.meter.sectioned >
+   .progress.hit-points > .label) than HD's (.meter.hit-dice.progress >
+   .label directly). */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group .progress.hit-points > .label,
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group .meter.hit-dice.progress > .label {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* HP's .progress.hit-points is only (full bar width - 50px), since .tmp
+   (native, width:50px — the TMP input box) is a sibling taking up the
+   rest of .meter.sectioned.hit-points' full width. Centering within that
+   narrower box lands ~25px left of the bar's TRUE center — where HD's
+   fraction sits, since .meter.hit-dice.progress has no such cutout.
+   padding-left here shifts a centered flex child right by half the added
+   padding, so 50px (matching .tmp's own width exactly) moves HP's
+   fraction the needed 25px right to align with HD's. HD gets no such
+   compensation — it doesn't need any. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group .progress.hit-points > .label {
+  padding-left: 50px;
+}
+
+/* Exhaustion pips (either side of the AC badge) are sized entirely off
+   --pip-size (native default 16px, both width and height — dnd5e.css:
+   6191-6205). Same selector dnd5e itself uses for this exact container
+   (dnd5e.css:9017), so it's a precise, safe target — nothing else with
+   pips (e.g. NPC legendary actions) is affected. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips .pip {
+  --pip-size: 10px;
+}
+
+/* Moving the two .pips groups (left/right of the AC badge) below the HP/HD
+   bars means pulling them out of .top's flex row entirely — they're
+   nested inside it alongside .ac-badge, not siblings of .lozenges/
+   .meter-group, so there's no flex `order` that reaches them from here.
+   .stats already has position:relative natively (dnd5e.css:9014-9016),
+   so absolute + a negative bottom offset positions them relative to
+   .stats' own box, past its bottom edge (which — once pips leave normal
+   flow — ends at the HD bar, the last remaining normal-flow child).
+   :first-of-type/:last-of-type (matching by tag, not class) reliably
+   picks out left vs right here since .top's only other child, .ac-badge,
+   sits between them in DOM order. Reasoned, not measured — expect to
+   tune both the offset and left/right inset live. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips {
+  position: absolute;
+  bottom: -137px;
+  /* Explicit own depth in .card's preserve-3d context, independent of
+     .stats' translateZ(3px) — safety net so pushing bottom further
+     negative can't run into anything else (the death-tray sits at
+     translateZ(-1px), so this alone shouldn't be the cause of pips
+     disappearing at -90/-100px, but ruling it out directly is cheaper
+     than more guessing). */
+  transform: translateZ(10px);
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips:first-of-type {
+  left: 9rem;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .top .pips:last-of-type {
+  right: 9rem;
+}
+
+/* Pushes the HP/HD block down away from the doll above it — targets only
+   the meter-group right after .lozenges (i.e. the HP one; HD follows
+   immediately after in normal flow, so it comes along for free) rather
+   than every .meter-group, which would also add extra gap BETWEEN HP and
+   HD themselves via the native `.meter-group + .meter-group` rule.
+   Reasoned starting guess — tune live. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .lozenges + .meter-group {
+  margin-top: 42px;
+}
+
+/* Matches the portrait frame's own rounded top corners (dnd5e.css's
+   .portrait > img/video border-radius: 3px 3px 0 0) for visual
+   consistency now that the doll's own content fills that frame instead.
+   Deliberately no overflow:hidden here — an earlier version had one
+   (purely to keep the doll's own square-cornered content from poking past
+   these rounded corners), and it correlated with the bottom ring/
+   necklace/ring row no longer being visible, likely clipping it before
+   .awc-doll-foreground's own overflow-y:auto (Content shell section,
+   above) got a chance to make it reachable via scroll like it was before.
+   The squared-off corners this trades away are a much smaller cost than
+   losing reachable slots — worth re-verifying live either way. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded .awc-doll-content {
+  border-radius: 3px 3px 0 0;
+}
+
+/* .portrait::after (dnd5e.css) is a decorative gold inset frame drawn
+   unconditionally on .portrait itself, regardless of what's inside it —
+   it doesn't go away just because the native <img> it was designed to
+   frame is gone. The doll has its own distinct framing already (ridge-
+   bordered slots, dark background), so this native overlay just reads as
+   an unwanted extra border on top of it now. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded::after {
+  display: none;
+}
+
+/* The capacity bar renders as a normal-flow block above the doll content
+   (not an absolute overlay) — simplest way to guarantee it never
+   overlaps the doll's own top-row slot icons regardless of exact pixel
+   values, at the cost of the small height budget accounted for above. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded > .awc-capacity-bar {
+  margin-inline: 8px;
+}
+
+/* .awc-doll-controls (the config-gear + close-X pair, paper-doll.hbs) is
+   shared markup with the pop-out, where "close" closes that window and
+   "configure" opens the per-actor doll settings popup. Neither makes
+   sense embedded — the sheet's own native window controls already cover
+   closing, and there's no separate window here to distinguish from a
+   "configure" action. Hidden here rather than making the shared template
+   conditional on embedded-vs-pop-out, to keep that one template genuinely
+   identical between both contexts. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded .awc-doll-controls {
+  display: none;
+}
+
+/* Deliberately NOT raising the sheet's own min-width/min-height here.
+   First attempt did (~1000x950, reasoned proportionally from the wider
+   sidebar) and broke small-screen use entirely: it forced the WINDOW
+   FRAME itself larger than a laptop viewport, which Foundry windows
+   can't scroll around at the browser level — unlike the sidebar's own
+   content, which .main-content already handles correctly on its own via
+   `overflow: hidden auto` (dnd5e.css:8875-8888) — that scrolls the whole
+   grid (sidebar + tab content together) whenever its content exceeds
+   whatever height the window actually is, native floor (800x700) or
+   otherwise. Small screens — the entire reason for this redesign — are
+   exactly the case where relying on that scroll instead of a forced
+   minimum size matters most. */

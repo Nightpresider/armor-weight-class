@@ -330,13 +330,24 @@ function _injectDollHeaderButton(app, el, actor) {
 
   el.querySelector(".awc-doll-toggle")?.remove();
 
+  // dollPlayerOwnedOnly gates the doll feature globally, not just the
+  // embed — removing above (in case it was previously injected, then the
+  // setting got toggled on for this actor) and bailing here keeps the
+  // pop-out toggle in sync with that.
+  if (game.settings.get(MODULE_ID, "dollPlayerOwnedOnly") && !actor.hasPlayerOwner) return;
+
   const header = el.querySelector(".window-header");
   if (!header) return;
 
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "header-control awc-doll-toggle";
-  btn.dataset.tooltip = game.i18n.localize("AWC.App.PaperDoll.Title");
+  // dollHideHeaderText: the button is already icon-only with no visible
+  // text label, so the closest honest effect this setting can have is
+  // suppressing even the hover tooltip text.
+  if (!game.settings.get(MODULE_ID, "dollHideHeaderText")) {
+    btn.dataset.tooltip = game.i18n.localize("AWC.App.PaperDoll.Title");
+  }
   btn.innerHTML = `<i class="fa-solid fa-person"></i>`;
   btn.addEventListener("click", async (ev) => {
     ev.preventDefault();
@@ -350,6 +361,45 @@ function _injectDollHeaderButton(app, el, actor) {
   const closeBtn = header.querySelector('[data-action="close"], .header-control.close, .close');
   if (closeBtn) closeBtn.insertAdjacentElement("beforebegin", btn);
   else header.appendChild(btn);
+}
+
+/**
+ * dollAutoOpen: a client-scoped world setting acting as the default,
+ * overridable per-actor via the "useDefault"/"true"/"false" flag set from
+ * AWCActorDollConfig. Only relevant to the pop-out — the embedded doll is
+ * always visible, nothing to "auto open". Fires at most once per sheet
+ * instance (guarded via a flag on `app` itself), not on every render.
+ */
+function _resolveAutoOpen(actor) {
+  const actorFlag = actor.getFlag(FLAG_NS, "dollAutoOpen") ?? "useDefault";
+  if (actorFlag === "true") return true;
+  if (actorFlag === "false") return false;
+  return game.settings.get(MODULE_ID, "dollAutoOpen");
+}
+
+function _maybeAutoOpenDoll(app, actor) {
+  if (!_hasApplicationV2() || app._awcAutoOpenChecked) return;
+  app._awcAutoOpenChecked = true;
+
+  if (game.settings.get(MODULE_ID, "dollPlayerOwnedOnly") && !actor.hasPlayerOwner) return;
+  if (!_resolveAutoOpen(actor)) return;
+
+  import("./apps/paper-doll-app.js").then(({ AWCPaperDoll }) => {
+    const alreadyOpen = [...foundry.applications.instances.values()].some(w => w instanceof AWCPaperDoll && w.actor === actor);
+    if (!alreadyOpen) new AWCPaperDoll(actor).render(true);
+  });
+}
+
+/**
+ * Dynamically imports and runs doll-embed.js's embedPaperDoll — gated
+ * behind _hasApplicationV2() at the call site so a pre-v13 client never
+ * even attempts the import (see doll-embed.js's own docblock for why that
+ * matters: it statically imports apps/paper-doll-app.js, which is unsafe
+ * to evaluate unconditionally).
+ */
+function _embedDollIfAvailable(app, el, actor) {
+  if (!_hasApplicationV2()) return;
+  import("./doll-embed.js").then(({ embedPaperDoll }) => embedPaperDoll(app, el, actor));
 }
 
 function _registerV14SheetHooks() {
@@ -379,7 +429,10 @@ function _registerV14SheetHooks() {
       if (actor.sheet !== app) return;
       injectCharacterSheetUI(app, html);
       const el = html instanceof HTMLElement ? html : html?.[0];
-      if (el) _injectDollHeaderButton(app, el, actor);
+      if (!el) return;
+      _injectDollHeaderButton(app, el, actor);
+      _maybeAutoOpenDoll(app, actor);
+      _embedDollIfAvailable(app, el, actor);
     });
   }
 
@@ -498,25 +551,33 @@ Hooks.on("updateItem", async (item, changes, _options, _userId) => {
   requestAnimationFrame(() => _refreshActorSheet(actor));
 });
 
+// AWC's Movement pills-group reads flags.armor-weight-class.movementDisplay,
+// an AWC-owned value written only by AWCMovementDisplayConfig's Save action
+// (see resolveMovementDisplay's docstring in sheet-inject.js) — this keeps
+// that display refreshed the instant the flag itself changes, same pattern
+// as the equip/unequip refresh above.
+Hooks.on("updateActor", (actor, changes, _options, _userId) => {
+  if (actor.type !== "character") return;
+  if (!foundry.utils.hasProperty(changes, `flags.${FLAG_NS}.movementDisplay`)) return;
+
+  console.debug(`${LOG} movementDisplay flag change on "${actor.name}" — refreshing AWC panels`, foundry.utils.getProperty(changes, `flags.${FLAG_NS}.movementDisplay`));
+  requestAnimationFrame(() => _refreshActorSheet(actor));
+});
+
 function _refreshActorSheet(actor) {
-  const sheet = actor.sheet;
-  if (!sheet) {
-    console.debug(`${LOG} _refreshActorSheet: no sheet for "${actor.name}"`);
-    return;
-  }
-
-  // Normalise element: ApplicationV2 → HTMLElement, legacy → jQuery wrapper
-  const raw = sheet.element;
-  const el  = raw instanceof HTMLElement ? raw : raw?.[0];
-
-  if (!el?.isConnected) {
-    // Sheet exists but is not currently rendered in the DOM
-    console.debug(`${LOG} _refreshActorSheet: sheet not in DOM for "${actor.name}"`);
+  const el = _sheetElementFor(actor);
+  if (!el) {
+    console.debug(`${LOG} _refreshActorSheet: no rendered sheet for "${actor.name}"`);
     return;
   }
 
   console.debug(`${LOG} _refreshActorSheet: directly refreshing panels for "${actor.name}"`);
-  injectCharacterSheetUI(sheet, el);
+  injectCharacterSheetUI(actor.sheet, el);
+  // Keeps the embedded doll in sync with equip/unequip changes — this path
+  // (unlike a genuine Foundry re-render) doesn't regenerate .portrait's
+  // native content, but embedPaperDoll rebuilds from live actor data
+  // unconditionally regardless, so it's always safe to call here too.
+  _embedDollIfAvailable(actor.sheet, el, actor);
 }
 
 // ── Sheet renders (legacy hook — fires in v12 and via dnd5e compat shim) ──────
@@ -539,4 +600,13 @@ Hooks.on("renderItemSheet", (app, html, _data) => {
   const el = html instanceof HTMLElement ? html : html[0];
   if (el) _patchEquipmentTypeSelect(el, item);
 });
+
+/** Normalised, connected-DOM-checked root element for actor's own open sheet, or null. */
+function _sheetElementFor(actor) {
+  const sheet = actor.sheet;
+  if (!sheet) return null;
+  const raw = sheet.element;
+  const el = raw instanceof HTMLElement ? raw : raw?.[0];
+  return el?.isConnected ? el : null;
+}
 

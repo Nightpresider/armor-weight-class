@@ -74,6 +74,10 @@
   "AWC.App.ActorDollConfig.AutoOpen.Always":     "Always",
   "AWC.App.ActorDollConfig.AutoOpen.Never":      "Never",
 
+  "AWC.App.MovementDisplayConfig.Title":   "Movement — Display Configuration",
+  "AWC.App.MovementDisplayConfig.Hint":    "Display-only values shown in the sheet's Movement section. Never affects actual game-mechanical movement — the real Movement Configuration dialog is unchanged and still reachable from the native Speed lozenge.",
+  "AWC.App.MovementDisplayConfig.Current": "Current",
+
   "AWC.Settings.ConfigureDoll.Label": "Configure Paper Doll",
   "AWC.Settings.ConfigureDoll.Hint":  "Customize empty images and appearance for each slot type.",
 

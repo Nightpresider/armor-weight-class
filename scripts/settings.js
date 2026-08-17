@@ -170,6 +170,7 @@ export function registerSettings() {
     config: true,
     type: Boolean,
     default: false,
+    onChange: () => refreshAllSheets(),
   });
 
   game.settings.register(MODULE_ID, "dollAutoOpen", {
