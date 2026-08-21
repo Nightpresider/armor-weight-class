@@ -108,3 +108,39 @@ export function applyCustomAC(actor) {
 export function getACBreakdown(actor) {
   return actor._awcAC ?? null;
 }
+
+// ─── Shared formula display ──────────────────────────────────────────────────
+// Extracted from sheet-inject.js's injectACBreakdown so doll-embed.js's
+// capacity-bar hover tooltip can show the exact same formula, rather than
+// duplicating this HTML-building logic in two places.
+
+export const acOp = (n) => (n < 0 ? "-" : "+");
+
+/**
+ * Renders the same "10 + mod + items + misc = total" breakdown block used
+ * for the native AC badge's tooltip — reused by doll-embed.js's capacity
+ * bar for its own doll-centered hover tooltip.
+ */
+export function buildACFormulaHTML(ac) {
+  const abilityUsed = ac.usedAbility.toUpperCase();
+  return `
+    <div class="awc-ac-breakdown" data-tooltip-direction="UP">
+      <div class="awc-ac-formula">
+        <span class="awc-ac-base" title="Base">10</span>
+        <span class="awc-ac-op">${acOp(ac.baseMod)}</span>
+        <span class="awc-ac-mod ${ac.usedAbility}" title="max(DEX, CON) = max(${ac.dexMod}, ${ac.conMod})">
+          ${Math.abs(ac.baseMod)}
+          <small>${abilityUsed}</small>
+        </span>
+        ${ac.itemBonus !== 0 ? `
+        <span class="awc-ac-op">${acOp(ac.itemBonus)}</span>
+        <span class="awc-ac-items" title="Sum of item AC bonuses">${Math.abs(ac.itemBonus)}<small>equip</small></span>` : ""}
+        ${ac.miscBonus !== 0 ? `
+        <span class="awc-ac-op">${acOp(ac.miscBonus)}</span>
+        <span class="awc-ac-misc" title="Active Effects &amp; other bonuses">${Math.abs(ac.miscBonus)}<small>misc</small></span>` : ""}
+        <span class="awc-ac-op">=</span>
+        <span class="awc-ac-total">${ac.total}</span>
+      </div>
+    </div>
+  `;
+}

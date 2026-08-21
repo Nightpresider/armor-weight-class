@@ -59,6 +59,7 @@ Hooks.once("ready", async () => {
   console.log(`${LOG} Ready. API at game.awc`);
 
   _patchArmorClass();
+  try { _patchSidebarToggle(); } catch (err) { console.error(`${LOG} _patchSidebarToggle failed`, err); }
   _registerV14SheetHooks();
 
   if (game.user.isGM) {
@@ -138,6 +139,121 @@ function _patchArmorClass() {
   }
 
   console.warn(`${LOG} _patchArmorClass: no patchable method found — AC override disabled`);
+}
+
+// ── Sidebar two-step collapse ─────────────────────────────────────────────────
+
+/**
+ * Whether the embedded doll (and therefore the half-collapse tier — nothing
+ * doll-related to preserve at half width otherwise) applies to this actor.
+ * Mirrors doll-embed.js's own gate exactly (dollPlayerOwnedOnly, TRUE =
+ * restrict to player-owned actors only — negated here since this asks
+ * "does it apply" rather than "should it be skipped").
+ */
+function _dollAppliesTo(actor) {
+  return actor?.hasPlayerOwner || !game.settings.get(MODULE_ID, "dollPlayerOwnedOnly");
+}
+
+/**
+ * Opens the standalone Paper Doll pop-out (one-way, not a toggle — the
+ * collapser button that triggers this hides itself right after, so it can't
+ * be re-clicked to close what it just opened) and hides the collapser.
+ */
+async function _openSidebarPopoutFromCollapser(app) {
+  if (!_hasApplicationV2()) return;
+  const actor = app.actor ?? app.document;
+  const { AWCPaperDoll } = await import("./apps/paper-doll-app.js");
+  const alreadyOpen = [...foundry.applications.instances.values()].some(w => w instanceof AWCPaperDoll && w.actor === actor);
+  if (!alreadyOpen) new AWCPaperDoll(actor).render(true);
+  const collapser = app.form?.querySelector(".sidebar-collapser");
+  if (collapser) collapser.style.display = "none";
+}
+
+/**
+ * Patches _toggleSidebar (dnd5e.mjs, shared actor-sheet base class) to cycle
+ * Full → Half → Collapsed instead of the native binary Full ↔ Collapsed
+ * toggle. Same find-class/guard-flag/save-original/wrap shape as
+ * _patchArmorClass above, but walking CONFIG.Actor.sheetClasses (like
+ * _registerV14SheetHooks does) rather than a document class, since this is a
+ * sheet-side method. Only intercepts plain (no-argument) calls — an explicit
+ * force-call (e.g. dnd5e restoring persisted collapse state on render) passes
+ * straight through to the original, unmodified.
+ */
+function _patchSidebarToggle() {
+  if (!_hasApplicationV2()) return;
+
+  const seen = new Set();
+  let target = null;
+
+  for (const sheets of Object.values(CONFIG.Actor?.sheetClasses ?? {})) {
+    for (const entry of Object.values(sheets)) {
+      let cls = entry.cls;
+      while (cls && cls.prototype && !seen.has(cls)) {
+        seen.add(cls);
+        if (!target && Object.prototype.hasOwnProperty.call(cls.prototype, "_toggleSidebar")) {
+          target = cls;
+        }
+        cls = cls.prototype.__proto__?.constructor;
+      }
+    }
+  }
+
+  if (!target) {
+    console.warn(`${LOG} _patchSidebarToggle: no class with own _toggleSidebar found — two-step collapse disabled`);
+    return;
+  }
+
+  const proto = target.prototype;
+  if (proto._awcSidebarPatched) {
+    console.debug(`${LOG} _patchSidebarToggle: already patched, skipping`);
+    return;
+  }
+
+  const _orig = proto._toggleSidebar;
+  proto._toggleSidebar = function (collapsed) {
+    try {
+      const actor = this.actor ?? this.document;
+      if (collapsed !== undefined || !_dollAppliesTo(actor)) {
+        this.element.classList.remove("awc-sidebar-half");
+        return _orig.call(this, collapsed);
+      }
+
+      const el = this.element;
+      if (el.classList.contains("sidebar-collapsed")) {
+        _openSidebarPopoutFromCollapser(this);
+        return true;
+      }
+
+      if (el.classList.contains("awc-sidebar-half")) {
+        el.classList.remove("awc-sidebar-half");
+        const result = _orig.call(this, true);
+        // Native icon logic only knows caret-left/right — overwrite with the
+        // pop-out meaning this button now has while fully collapsed. Reset
+        // back to a plain caret by the step-up button when leaving Collapsed.
+        const collapser = this.form?.querySelector(".sidebar-collapser");
+        const icon = collapser?.querySelector("i");
+        if (icon) {
+          // Native icon is already "fas fa-caret-left/right" — just swap the
+          // direction class, "fas" (Font Awesome's solid-style prefix) stays.
+          icon.classList.remove("fa-caret-left", "fa-caret-right");
+          icon.classList.add("fa-person");
+        }
+        if (collapser) {
+          collapser.dataset.tooltip = "AWC.App.PaperDoll.Title";
+          collapser.setAttribute("aria-label", game.i18n.localize("AWC.App.PaperDoll.Title"));
+        }
+        return result;
+      }
+
+      el.classList.add("awc-sidebar-half");
+      return false;
+    } catch (err) {
+      console.error(`${LOG} patched _toggleSidebar failed — falling back to native toggle`, err);
+      return _orig.call(this, collapsed);
+    }
+  };
+  proto._awcSidebarPatched = true;
+  console.log(`${LOG} Patched ${target.name}._toggleSidebar for two-step collapse`);
 }
 
 // ── Equipment type definitions ────────────────────────────────────────────────
@@ -363,32 +479,14 @@ function _injectDollHeaderButton(app, el, actor) {
   else header.appendChild(btn);
 }
 
-/**
- * dollAutoOpen: a client-scoped world setting acting as the default,
- * overridable per-actor via the "useDefault"/"true"/"false" flag set from
- * AWCActorDollConfig. Only relevant to the pop-out — the embedded doll is
- * always visible, nothing to "auto open". Fires at most once per sheet
- * instance (guarded via a flag on `app` itself), not on every render.
- */
-function _resolveAutoOpen(actor) {
-  const actorFlag = actor.getFlag(FLAG_NS, "dollAutoOpen") ?? "useDefault";
-  if (actorFlag === "true") return true;
-  if (actorFlag === "false") return false;
-  return game.settings.get(MODULE_ID, "dollAutoOpen");
-}
-
-function _maybeAutoOpenDoll(app, actor) {
-  if (!_hasApplicationV2() || app._awcAutoOpenChecked) return;
-  app._awcAutoOpenChecked = true;
-
-  if (game.settings.get(MODULE_ID, "dollPlayerOwnedOnly") && !actor.hasPlayerOwner) return;
-  if (!_resolveAutoOpen(actor)) return;
-
-  import("./apps/paper-doll-app.js").then(({ AWCPaperDoll }) => {
-    const alreadyOpen = [...foundry.applications.instances.values()].some(w => w instanceof AWCPaperDoll && w.actor === actor);
-    if (!alreadyOpen) new AWCPaperDoll(actor).render(true);
-  });
-}
+// Cached after the first successful dynamic import — dynamic import() of an
+// already-loaded specifier still costs a microtask hop through its own
+// promise machinery every time it's called fresh; calling the cached
+// export directly on every subsequent render skips that, which matters
+// here since doll-embed.js's own embedPaperDoll now has a synchronous fast
+// path (its per-actor HTML cache) that this indirection would otherwise
+// sit in front of on every single call.
+let _dollEmbedModule = null;
 
 /**
  * Dynamically imports and runs doll-embed.js's embedPaperDoll — gated
@@ -399,7 +497,14 @@ function _maybeAutoOpenDoll(app, actor) {
  */
 function _embedDollIfAvailable(app, el, actor) {
   if (!_hasApplicationV2()) return;
-  import("./doll-embed.js").then(({ embedPaperDoll }) => embedPaperDoll(app, el, actor));
+  if (_dollEmbedModule) {
+    _dollEmbedModule.embedPaperDoll(app, el, actor);
+    return;
+  }
+  import("./doll-embed.js").then((mod) => {
+    _dollEmbedModule = mod;
+    mod.embedPaperDoll(app, el, actor);
+  });
 }
 
 function _registerV14SheetHooks() {
@@ -431,7 +536,6 @@ function _registerV14SheetHooks() {
       const el = html instanceof HTMLElement ? html : html?.[0];
       if (!el) return;
       _injectDollHeaderButton(app, el, actor);
-      _maybeAutoOpenDoll(app, actor);
       _embedDollIfAvailable(app, el, actor);
     });
   }

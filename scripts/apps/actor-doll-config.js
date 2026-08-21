@@ -1,8 +1,8 @@
 /**
  * apps/actor-doll-config.js
- * Small per-actor popup: portrait override, portrait fit, and an auto-open
- * override for the doll. Actor-scoped, not world-scoped — deliberately kept
- * separate from the world-level settings registered in settings.js.
+ * Small per-actor popup: portrait override and portrait fit for the doll.
+ * Actor-scoped, not world-scoped — deliberately kept separate from the
+ * world-level settings registered in settings.js.
  */
 
 import { MODULE_ID, FLAG_NS } from "../constants.js";
@@ -44,7 +44,6 @@ export class AWCActorDollConfig extends AWCApplication {
       actor: this.object,
       dollImg: this.object.getFlag(FLAG_NS, "dollImg") ?? "",
       dollObjectFit: this.object.getFlag(FLAG_NS, "dollObjectFit") ?? "cover",
-      dollAutoOpen: this.object.getFlag(FLAG_NS, "dollAutoOpen") ?? "useDefault",
       buttons: [{ type: "submit", icon: "fas fa-save", label: "SETTINGS.Save" }],
     };
   }

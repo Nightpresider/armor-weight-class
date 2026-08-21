@@ -173,15 +173,6 @@ export function registerSettings() {
     onChange: () => refreshAllSheets(),
   });
 
-  game.settings.register(MODULE_ID, "dollAutoOpen", {
-    name: "AWC.Settings.DollAutoOpen.Label",
-    hint: "AWC.Settings.DollAutoOpen.Hint",
-    scope: "client",
-    config: true,
-    type: Boolean,
-    default: false,
-  });
-
   // ── Migration schema version (internal bookkeeping, never user-facing) ────
   game.settings.register(MODULE_ID, "dataSchemaVersion", {
     scope: "world",

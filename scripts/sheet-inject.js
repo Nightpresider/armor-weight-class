@@ -10,6 +10,8 @@
 import { MODULE_ID, FLAG_NS, DEFAULT_BRACKETS } from "./constants.js";
 import { getACBreakdown } from "./ac.js";
 import { getItemSlot } from "./slots.js";
+import { reflowItemsList } from "./column-reflow.js";
+import { TARGET_SHAPE_PATTERN, buildTargetShapeSVG, INDIVIDUAL_TARGET_PATTERNS, buildIndividualTargetSVG } from "./target-icons.js";
 
 const LOG = `${MODULE_ID} |`;
 
@@ -52,6 +54,26 @@ export function injectCharacterSheetUI(app, html) {
   injectSkillsProficiency(el, actor);
   injectMovementPillsGroup(el, actor);
   hideNativeLozenges(el);
+  stripFavoritesAttackText(el);
+  try { stripConnectorWords(el); } catch (err) { console.error(`${LOG} stripConnectorWords failed`, err); }
+  try { iconifyTargetColumn(el); } catch (err) { console.error(`${LOG} iconifyTargetColumn failed`, err); }
+  try { overlaySchoolIconOnTime(el); } catch (err) { console.error(`${LOG} overlaySchoolIconOnTime failed`, err); }
+  try { mergeUsesIntoPrepared(el); } catch (err) { console.error(`${LOG} mergeUsesIntoPrepared failed`, err); }
+  relocateInventoryCurrency(el);
+  try { relocateSearchAndAttunement(el); } catch (err) { console.error(`${LOG} relocateSearchAndAttunement failed`, err); }
+  try { relocateToolsUnderSaves(el); } catch (err) { console.error(`${LOG} relocateToolsUnderSaves failed`, err); }
+  try { wireSidebarCollapseReflow(el); } catch (err) { console.error(`${LOG} wireSidebarCollapseReflow failed`, err); }
+  try { injectSidebarUncollapseButton(el, actor, app); } catch (err) { console.error(`${LOG} injectSidebarUncollapseButton failed`, err); }
+  try { relocateConditionsIntoEffectsList(el); } catch (err) { console.error(`${LOG} relocateConditionsIntoEffectsList failed`, err); }
+  try { wireHpHdFractionAlignment(el); } catch (err) { console.error(`${LOG} wireHpHdFractionAlignment failed`, err); }
+  try {
+    reflowItemsList(el, { listSelector: '.tab[data-tab="inventory"] .items-list' });
+    reflowItemsList(el, { listSelector: '.tab[data-tab="features"] .items-list' });
+    reflowItemsList(el, { listSelector: '.tab[data-tab="spells"] .items-list' });
+    reflowItemsList(el, { listSelector: '.tab[data-tab="effects"] .items-list.effects-list' });
+  } catch (err) {
+    console.error(`${LOG} reflowItemsList failed`, err);
+  }
 
   if (game.settings.get(MODULE_ID, "showACBreakdown") && ac) {
     injectACBreakdown(el, ac);
@@ -394,6 +416,627 @@ function hideNativeLozenges(el) {
   if (lozenges) lozenges.style.display = "none";
 }
 
+/**
+ * Drops the word "Attack" from Favorites subtitle text (e.g. "Ranged
+ * Weapon Attack" → "Ranged Weapon"). subtitle is rendered via {{{ }}}
+ * (raw/unescaped, character-sidebar.hbs) so this operates on innerHTML
+ * rather than textContent — a plain-text word match won't disturb any
+ * embedded markup. Safe to rerun every render: dnd5e regenerates
+ * .favorites fresh from its template each time, so this always runs
+ * against genuine unprocessed native content, never its own prior output.
+ */
+function stripFavoritesAttackText(el) {
+  el.querySelectorAll(".favorites > ul .name-stacked .subtitle").forEach(node => {
+    node.innerHTML = node.innerHTML.replace(/\s*\bAttack\b\s*/g, " ").trim();
+  });
+}
+
+// Word-boundary matched, not a bare substring — "and"/"or" bare would also
+// hit "Wand", "Handaxe", "Armor", "Corridor", "Mirror", etc. "/" has no
+// such risk (never legitimately part of a word) so it's matched directly.
+// Two separate regex objects (not one shared /g one reused for both a
+// .test() check and a .replace() call) — a global regex's lastIndex is
+// mutable/stateful across calls, and mixing .test() + .replace() usage on
+// the SAME instance is a well-known source of skipped-match bugs.
+const CONNECTOR_WORD_CHECK = /\s*\/\s*|\b(?:and|or)\b/i;
+const CONNECTOR_WORD_REPLACE = /\s*\/\s*|\b(?:and|or)\b/gi;
+
+// Short compact labels/tags this is meant for ("Two-Handed, Versatile",
+// "Bludgeoning, Piercing, and Slashing") run well under this; genuine
+// prose sentences in item/spell descriptions run well past it — a second,
+// content-shape-based safety net alongside the container exclusions
+// below, in case some as-yet-unknown short label elsewhere on the sheet
+// isn't covered by that list.
+const CONNECTOR_MAX_LENGTH = 100;
+
+// Prose/freeform containers where "and"/"or" are grammatically load-
+// bearing — never touch these regardless of length. .editor covers the
+// Biography tab's rich-text field; .item-summary is dnd5e's own expanded
+// item/spell description partial (inventory.hbs's "dnd5e.item-summary").
+// .separator is dnd5e's own convention (used system-wide — HP/HD bars,
+// Uses fractions, weapon short/long range, encumbrance, etc.) for a "/"
+// that's a genuine value/max or short/long DATA separator, never a
+// grammatical connector — critical to exclude, since replacing that "/"
+// with a space wouldn't just look different, it'd change what the number
+// means (e.g. "150/600 ft" -> "150 600 ft" reads as one wrong value).
+const CONNECTOR_EXCLUDE_SELECTOR =
+  ".editor, .item-summary, .separator, input, textarea, select, script, style";
+
+/**
+ * Replaces "and"/"or"/"/" with a single space anywhere in the sheet's
+ * short compact text (item property tags, subtitle badges, resistance/
+ * condition lists, etc.) to keep those visually tighter — deliberately
+ * NOT applied to prose (item descriptions, the Biography editor), which
+ * needs those words grammatically. Naturally idempotent: re-running this
+ * against already-processed text (e.g. via _refreshActorSheet, which
+ * doesn't trigger a fresh dnd5e render) is a no-op, since there's nothing
+ * left to replace — unlike this file's DOM-restructuring helpers, no
+ * explicit "already ran" guard is needed for a plain text substitution.
+ */
+function stripConnectorWords(el) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const text = node.nodeValue;
+      if (!text || !CONNECTOR_WORD_CHECK.test(text)) return NodeFilter.FILTER_REJECT;
+      if (text.length > CONNECTOR_MAX_LENGTH) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement?.closest(CONNECTOR_EXCLUDE_SELECTOR)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const nodes = [];
+  let node;
+  while ((node = walker.nextNode())) nodes.push(node);
+  nodes.forEach(n => { n.nodeValue = n.nodeValue.replace(CONNECTOR_WORD_REPLACE, " "); });
+}
+
+/**
+ * Replaces the shape/type WORD in the items list's Target column with one
+ * of target-icons.js's small SVGs, stamping whatever leading text dnd5e's
+ * own label carried ("5 ft" -> "5", "Any", "Each", a bare count, or
+ * nothing at all for "Self") on top of the icon (armor-weight-class.css
+ * layers them via position:absolute) — saves the horizontal space the
+ * spelled-out name was taking.
+ *
+ * Two label families, checked in order:
+ *  - Area shapes ("5 ft sphere", "1 ft cube") — TARGET_SHAPE_PATTERN.
+ *  - Individual target types ("Self", "Any", "3 creatures", "Each ally")
+ *    — INDIVIDUAL_TARGET_PATTERNS, dnd5e's affects.labels.sheet text.
+ * Both read the already-rendered label text (.item-target .condensed,
+ * inventory/columns/target.hbs) rather than tracing back through each
+ * row's item/activity documents — dnd5e's own TargetField.prepareData
+ * (dnd5e.mjs) always ends the label with the exact lowercase config key
+ * ("... sphere", "... creature", etc, see en.json's DND5E.TARGET.Type.*
+ * strings), so matching the trailing word(s) is a reliable, much simpler
+ * way to recover the type than resolving which Activity a row belongs to.
+ *
+ * Guards against re-processing its own output: an already-iconified span
+ * carries .awc-target-iconified, and dnd5e regenerates .item-target fresh
+ * from the template every render anyway (same reasoning as
+ * stripFavoritesAttackText above), so this guard is mostly about not
+ * double-running within a single render pass, not about surviving across
+ * renders.
+ */
+function iconifyTargetColumn(el) {
+  el.querySelectorAll(".item-target .condensed:not(.awc-target-iconified)").forEach(node => {
+    const text = node.textContent.trim();
+
+    const areaMatch = text.match(TARGET_SHAPE_PATTERN);
+    if (areaMatch) {
+      const [, leading, shape] = areaMatch;
+      const svg = buildTargetShapeSVG(shape.toLowerCase());
+      if (svg) applyTargetIcon(node, text, svg, stripTargetUnit(leading));
+      return;
+    }
+
+    for (const { type, re } of INDIVIDUAL_TARGET_PATTERNS) {
+      const match = text.match(re);
+      if (!match) continue;
+      const svg = buildIndividualTargetSVG(type);
+      if (svg) applyTargetIcon(node, text, svg, match[1] ?? "");
+      return;
+    }
+  });
+}
+
+/** Shared by both label families above — swaps node's text for the icon SVG plus an overlaid text span (empty for bare labels like "Self"/"Any"). */
+function applyTargetIcon(node, fullText, svg, overlayText) {
+  node.classList.add("awc-target-iconified");
+  node.dataset.tooltip = fullText;
+  node.textContent = "";
+  node.insertAdjacentHTML("beforeend", svg);
+
+  if (!overlayText) return;
+  const label = document.createElement("span");
+  label.className = "awc-target-number";
+  label.textContent = overlayText;
+  node.appendChild(label);
+}
+
+/**
+ * "5 ft" -> "5", "2 × 5 ft" -> "2 × 5" — drops the trailing unit word
+ * (whatever it is, not just "ft") by popping the last whitespace-
+ * separated token when it isn't itself a bare number, rather than
+ * matching "ft" literally (movementUnits has several: ft/mi/m/km/...).
+ */
+function stripTargetUnit(leading) {
+  const parts = leading.trim().split(/\s+/);
+  if (parts.length > 1 && !/^\d+(\.\d+)?$/.test(parts[parts.length - 1])) parts.pop();
+  return parts.join(" ");
+}
+
+/**
+ * Displays the spell school icon (native <dnd5e-icon>, .item-school
+ * column, inventory/columns/school.hbs) behind the Time column's text
+ * instead of in its own dedicated column (now hidden entirely,
+ * armor-weight-class.css) — same icon-behind-number overlay pattern as
+ * iconifyTargetColumn above.
+ *
+ * .item-school only ever renders on the item's OWN top-level row (school
+ * is a property of the whole spell, not per-activity — school.hbs gates
+ * on isItem) while .item-time renders on that row AND every activity
+ * sub-row nested inside it (activity.hbs rows sit inside the same
+ * li.item[data-item-id], per inventory.hbs's item-description/wrapper/
+ * activities structure) — so the icon is CLONED into every matching Time
+ * cell within the same item's subtree rather than moved once, since a
+ * single DOM node can't occupy multiple Time cells at once.
+ *
+ * The clone needs its own --icon-fill/--icon-size — dnd5e-icon's shadow-
+ * rendered <svg> reads those as inherited custom properties from an
+ * ancestor (native gold/18px comes from .item-school itself, dnd5e.css:
+ * 12958-12962), which the clone loses once it's no longer inside
+ * .item-school.
+ */
+function overlaySchoolIconOnTime(el) {
+  el.querySelectorAll("li.item[data-item-id]").forEach(itemEl => {
+    const schoolIcon = itemEl.querySelector(":scope .item-school dnd5e-icon");
+    if (!schoolIcon) return;
+
+    itemEl.querySelectorAll(":scope .item-time .condensed:not(.awc-school-iconified)").forEach(node => {
+      const text = node.textContent;
+      node.classList.add("awc-school-iconified");
+      node.textContent = "";
+
+      const iconWrap = document.createElement("span");
+      iconWrap.className = "awc-school-icon-wrap";
+      iconWrap.appendChild(schoolIcon.cloneNode(true));
+      node.appendChild(iconWrap);
+
+      const textSpan = document.createElement("span");
+      textSpan.className = "awc-school-time-text";
+      textSpan.textContent = text;
+      node.appendChild(textSpan);
+    });
+  });
+}
+
+/**
+ * Spells tab only. Uses (.item-uses, inventory/columns/uses.hbs) and the
+ * Prepared toggle (a data-action="prepare" button inside .item-controls,
+ * NOT its own column — dnd5e.mjs builds ctx.preparation for
+ * inventory/columns/controls.hbs to render, alongside attune/equip/
+ * expand/context-menu) are usually mutually exclusive per the user
+ * (a spell that can be prepared/unprepared doesn't typically also have
+ * limited uses), so the whole Uses column is hidden outright
+ * (armor-weight-class.css) on this tab. For the cases where a spell DOES
+ * have both, the Uses fraction is moved (not rebuilt — keeps the live
+ * input's data-name binding intact, same reasoning as
+ * relocateInventoryCurrency below) into a new wrapper stacked above the
+ * prepare button, so it's still visible even with the column gone.
+ *
+ * Idempotency: marks the drained .item-uses with .awc-uses-merged rather
+ * than relying on it having become empty (moving zero child nodes on a
+ * second pass would be harmless, but re-wrapping an ALREADY-wrapped
+ * prepareBtn via replaceWith would nest .awc-prepared-cell inside itself
+ * every time this runs against the same stale DOM — e.g. via
+ * _refreshActorSheet's equip/unequip path, which doesn't trigger a
+ * genuine dnd5e re-render that would otherwise hand back fresh nodes).
+ */
+function mergeUsesIntoPrepared(el) {
+  el.querySelectorAll('.tab[data-tab="spells"] li.item[data-item-id]').forEach(itemEl => {
+    const row = itemEl.querySelector(":scope > .item-row");
+    if (!row) return;
+
+    const prepareBtn = row.querySelector('.item-controls [data-action="prepare"]');
+    const usesEl = row.querySelector(".item-uses:not(.empty):not(.awc-uses-merged)");
+    if (!prepareBtn || !usesEl) return;
+
+    usesEl.classList.add("awc-uses-merged");
+
+    const usesFrag = document.createElement("span");
+    usesFrag.className = "awc-prepared-uses";
+    Array.from(usesEl.childNodes).forEach(node => usesFrag.appendChild(node));
+
+    const wrap = document.createElement("span");
+    wrap.className = "awc-prepared-cell";
+    prepareBtn.replaceWith(wrap);
+    wrap.append(usesFrag, prepareBtn);
+  });
+}
+
+/**
+ * Moves the Inventory tab's native currency row (section.currency — PP/GP/
+ * EP/SP/CP + the Manage Currency button, inventory.hbs) out of
+ * .inventory-element and into .top .containers' spot — a native "equipped
+ * containers" icon strip (dnd5e.css:7822, flex:1) that sits empty/dead on
+ * this module's sheets since the Paper Doll already handles bag/pouch
+ * equipping. .containers itself is hidden rather than removed, matching
+ * hideNativeLozenges' pattern of hiding rather than destroying native
+ * elements this module supersedes.
+ *
+ * Moves the EXISTING .currency DOM node (not a rebuilt copy) so its
+ * already-wired InventoryElement#connectedCallback listeners (dnd5e.mjs:
+ * 64341-64387 — input change handlers, the manage-currency click handler)
+ * and live <input name="system.currency.*"> bindings stay intact. Safe to
+ * rerun every render: InventoryElement doesn't regenerate its own
+ * innerHTML independently, dnd5e's normal outer sheet re-render does, so
+ * .currency reappears fresh in its native spot on every relevant re-render
+ * and needs re-moving each time — same pattern as every other injectXXX
+ * helper in this file.
+ */
+function relocateInventoryCurrency(el) {
+  const top = el.querySelector('.tab[data-tab="inventory"] .top');
+  const containers = top?.querySelector(".containers");
+  const currency = el.querySelector('.tab[data-tab="inventory"] section.currency');
+  if (!top || !containers || !currency) return;
+
+  containers.style.display = "none";
+  top.appendChild(currency);
+}
+
+/**
+ * Moves the Inventory tab's search bar (item-list-controls) and
+ * attunement box (.attunement) — normally .middle's two children, in
+ * their own row below .top — up into .top itself once the sidebar is in
+ * Half mode, stacked into a new wrapper appended after .currency.
+ * Reclaims the empty space .currency leaves behind once it stops
+ * stretching to fill .top (armor-weight-class.css's Half-mode currency
+ * rules).
+ *
+ * A CSS-only position:absolute version of this (tried first) had to guess
+ * .currency's own rendered width to avoid overlapping it, and got that
+ * guess wrong — confirmed live, the search bar visually covered part of
+ * the currency row. Making these genuine flex children of .top instead
+ * means flexbox's own shrink behavior keeps them clear of .currency
+ * automatically, for any actual width, with no guessing involved.
+ *
+ * Reversible: moves everything back into .middle, in original order, once
+ * NOT in Half mode — same idempotent-move pattern as
+ * relocateToolsUnderSaves below (checking "is it already where it should
+ * be" via .appendChild's no-op-if-already-there behavior, not a separate
+ * has-this-already-run flag).
+ */
+function relocateSearchAndAttunement(el) {
+  const sheetRoot = el.closest(".sheet.actor.character") ?? el;
+  // Same relocated position/behavior in fully-Collapsed as Half — both
+  // narrow the sidebar enough that .currency stops stretching (armor-
+  // weight-class.css), leaving the same reclaimable space either way.
+  const half = sheetRoot.classList.contains("awc-sidebar-half") || sheetRoot.classList.contains("sidebar-collapsed");
+
+  const top = el.querySelector('.tab[data-tab="inventory"] .top');
+  const middle = el.querySelector('.tab[data-tab="inventory"] .middle');
+  // Searched across the whole tab, not just .middle — once relocated,
+  // these live inside .top's wrapper instead, and a lookup scoped to
+  // .middle would find nothing there and bail before ever moving them
+  // back. Confirmed live: that's exactly what left search/attunement
+  // stuck in their Half-mode DOM position even after switching back to
+  // Full, since the move-back branch below never got a chance to run.
+  const search = el.querySelector('.tab[data-tab="inventory"] item-list-controls');
+  const attunement = el.querySelector('.tab[data-tab="inventory"] .attunement');
+  if (!top || !middle || !search) return;
+
+  if (half) {
+    let wrapper = top.querySelector(":scope > .awc-inventory-search-attunement");
+    if (!wrapper) {
+      wrapper = document.createElement("div");
+      wrapper.className = "awc-inventory-search-attunement";
+      top.appendChild(wrapper);
+    }
+    wrapper.appendChild(search);
+    if (attunement) wrapper.appendChild(attunement);
+  } else {
+    const wrapper = top.querySelector(":scope > .awc-inventory-search-attunement");
+    if (wrapper) {
+      middle.appendChild(search);
+      if (attunement) middle.appendChild(attunement);
+      wrapper.remove();
+    }
+  }
+}
+
+/**
+ * Relocates Tools (currently under Skills in .col-2 .left) to render
+ * under Saving Throws (.col-2 .right, right after the .top wrapper that
+ * holds Saves + the class/race/background pill card) once the sidebar
+ * is collapsed — freed width otherwise just stretches both columns
+ * uniformly, still leaving .right comparatively short next to a taller
+ * Skills+Tools .left column.
+ *
+ * Gated on the sheet root's own sidebar-collapsed class (toggled by
+ * dnd5e's native _toggleSidebar, dnd5e.mjs) rather than a live width
+ * measurement — Foundry keeps every tab's DOM present at once (only the
+ * active one is visible), so .col-2's getBoundingClientRect() would
+ * read zero/wrong on a currently-hidden tab. A class check works
+ * correctly regardless of which tab happens to be active when this
+ * runs. Cross-container CSS (order, grid-area) can't move an element
+ * between .left and .right's separate flex contexts on its own, so this
+ * has to be a real DOM move, not a CSS-only toggle — safe to rerun
+ * every render since it just checks "is Tools already where it should
+ * be" implicitly via .after() being a no-op when already in position.
+ */
+function relocateToolsUnderSaves(el) {
+  const sheetRoot = el.closest(".sheet.actor.character") ?? el;
+  const collapsed = sheetRoot.classList.contains("sidebar-collapsed");
+
+  // .col-2 is a class on the SAME element as .tab[data-tab="details"]
+  // (confirmed via DevTools: <section class="tab col-2" data-tab=
+  // "details">), not a separate nested wrapper — no space between the
+  // attribute selector and .col-2.
+  const tools = el.querySelector('.tab[data-tab="details"].col-2 .left filigree-box.tools');
+  if (!tools) return;
+
+  if (collapsed) {
+    const savesTop = el.querySelector('.tab[data-tab="details"].col-2 .right .top');
+    if (savesTop) savesTop.after(tools);
+  } else {
+    const skills = el.querySelector('.tab[data-tab="details"].col-2 .left filigree-box.skills');
+    if (skills) skills.after(tools);
+  }
+}
+
+/**
+ * Effects tab, Half/Collapsed only — zero change in Full. The Conditions
+ * card doesn't live inside the same .items-list.effects-list <section>
+ * as the other effect-type category cards (active-effects.hbs renders it
+ * in its own separate, trailing <section class="items-list"> instead,
+ * only present when hasConditions) — entirely outside reflowItemsList's
+ * reach (that call is scoped to .items-list.effects-list specifically).
+ *
+ * Moved into that same <section> in Half/Collapsed (tagged data-effect-
+ * type="awc-conditions" — it has no native effect-type of its own) so it
+ * becomes one more section reflowItemsList/packIntoColumns (column-
+ * reflow.js) can pack, pinned to column 2 there per an explicit request.
+ * Moved back to its native wrapper <section> in Full — this needs to be
+ * genuinely reversible (not one-way), since dnd5e's own _toggleSidebar
+ * never calls render() (wireSidebarCollapseReflow below re-runs this on
+ * click for exactly that reason), so a real render regenerating fresh,
+ * unmoved markup isn't guaranteed to happen between states.
+ *
+ * Both the effects-list <section> and the conditions card are looked up
+ * fresh via their OWN direct selectors every call — not via each other's
+ * current DOM position — specifically so this stays correct regardless
+ * of which state it was last left in. :has(.conditions-list) identifies
+ * the conditions card directly (by what's actually inside it) rather
+ * than by the wrapping <section>'s class NOT being .effects-list, which
+ * turned out not to reliably resolve to the right element last attempt.
+ * appendChild is a no-op when the section is already where it needs to
+ * be, so this is safe/idempotent to call on every render regardless of
+ * whether anything actually needs to move.
+ */
+function relocateConditionsIntoEffectsList(el) {
+  const sheetRoot = el.closest(".sheet.actor.character") ?? el;
+  const half = sheetRoot.classList.contains("awc-sidebar-half") || sheetRoot.classList.contains("sidebar-collapsed");
+
+  const effectsList = el.querySelector('.tab[data-tab="effects"] .items-list.effects-list');
+  const originalWrapper = el.querySelector('.tab[data-tab="effects"] .items-list:not(.effects-list)');
+  const conditionsSection = el.querySelector('.tab[data-tab="effects"] .items-section:has(.conditions-list)');
+  if (!effectsList || !originalWrapper || !conditionsSection) return;
+
+  if (half) {
+    conditionsSection.dataset.effectType = "awc-conditions";
+    effectsList.appendChild(conditionsSection);
+  } else {
+    conditionsSection.removeAttribute("data-effect-type");
+    originalWrapper.appendChild(conditionsSection);
+  }
+}
+
+/**
+ * dnd5e's own _toggleSidebar (dnd5e.mjs) only toggles the
+ * sidebar-collapsed class directly — it never calls render(), so
+ * nothing in this file's normal per-render pipeline (including
+ * relocateToolsUnderSaves/relocateSearchAndAttunement above) re-runs when
+ * the user actually clicks the collapse button. Wires a dedicated
+ * listener on .sidebar-collapser itself so both relocate immediately on
+ * click rather than waiting on some unrelated future re-render.
+ * requestAnimationFrame defers past Foundry's own action-delegated
+ * handler for this same click, so the class has definitely already been
+ * toggled by the time this re-checks it. Freshly re-wired every render
+ * since .sidebar-collapser itself is regenerated from the template each
+ * time — no stale-listener risk.
+ */
+function wireSidebarCollapseReflow(el) {
+  const collapser = el.querySelector(".sidebar-collapser");
+  if (!collapser) return;
+  collapser.addEventListener("click", () => {
+    requestAnimationFrame(() => {
+      relocateToolsUnderSaves(el);
+      relocateSearchAndAttunement(el);
+      relocateConditionsIntoEffectsList(el);
+      reflowItemsList(el, { listSelector: '.tab[data-tab="effects"] .items-list.effects-list' });
+    });
+  });
+}
+
+/**
+ * The step-up button for the two-step collapse (hooks.js's patched
+ * _toggleSidebar handles the step-down direction: Full -> Half -> Collapsed,
+ * plus repurposing .sidebar-collapser into a pop-out-and-hide button once
+ * Collapsed). This button always steps back exactly one tier — Collapsed ->
+ * Half, or Half -> Full — never jumping straight to Full. Visibility (hidden
+ * in Full, shown in Half/Collapsed) is CSS-driven off the same
+ * awc-sidebar-half/sidebar-collapsed classes on the sheet root, not
+ * inline-styled here.
+ *
+ * Deliberately does NOT call the patched _toggleSidebar to step up — that
+ * method treats any explicit argument as a "force" call bypassing the
+ * half-state cycle entirely (so unrelated force-calls, like dnd5e restoring
+ * persisted state on render, don't accidentally trigger it), which would
+ * jump straight to Full instead of landing on Half. Manipulates the classes
+ * directly instead, mirroring only the one piece of native behavior that
+ * matters here — persisting the collapsed flag — so a reload doesn't
+ * restore to fully collapsed after stepping up out of it.
+ */
+function injectSidebarUncollapseButton(el, actor, app) {
+  el.querySelector(".awc-sidebar-uncollapse")?.remove();
+
+  const collapser = el.querySelector(".sidebar-collapser");
+  if (!collapser) return;
+  if (!(actor?.hasPlayerOwner || !game.settings.get(MODULE_ID, "dollPlayerOwnedOnly"))) return;
+
+  // .sidebar-collapser is regenerated fresh from dnd5e's own template on
+  // every render (a new DOM node, not the one JS previously hid), so the
+  // hidden state from a prior "open the pop-out" click doesn't survive an
+  // unrelated re-render on its own — re-check and re-apply it here every
+  // time, reusing the same open-instance lookup the header toggle button
+  // (hooks.js) already uses, rather than a separately-tracked boolean that
+  // could drift out of sync with the pop-out actually being open.
+  const sheetRoot = el.closest(".sheet.actor.character") ?? el;
+  const collapsed = sheetRoot.classList.contains("sidebar-collapsed");
+
+  // Same staleness problem as the display:none above, for the icon: that
+  // fresh template regeneration uses dnd5e's OWN native logic for this
+  // icon (a plain caret-left/caret-right toggle), which has no idea about
+  // the repurposed "open the pop-out" meaning this module gives it once
+  // fully collapsed — it doesn't know to render fa-person. Any genuine
+  // render that happens while already collapsed (not just the click that
+  // got it there) silently resets the icon back to native's caret,
+  // confirmed live: functionally still correct (click behavior is driven
+  // by the sidebar-collapsed class, not by what icon happens to be
+  // showing) but visibly wrong. Recomputed unconditionally here — this
+  // runs on every render, not just the two click handlers that used to be
+  // the only place this got set — so a stray native render can't leave
+  // it stuck on the wrong icon anymore.
+  const icon = collapser.querySelector("i");
+  if (icon) {
+    icon.classList.remove("fa-caret-left", "fa-caret-right", "fa-person");
+    icon.classList.add(collapsed ? "fa-person" : "fa-caret-left");
+  }
+  collapser.dataset.tooltip = collapsed ? "AWC.App.PaperDoll.Title" : "JOURNAL.ViewCollapse";
+  collapser.setAttribute("aria-label", game.i18n.localize(collapsed ? "AWC.App.PaperDoll.Title" : "JOURNAL.ViewCollapse"));
+
+  if (collapsed) {
+    import("./apps/paper-doll-app.js").then(({ AWCPaperDoll }) => {
+      const open = [...foundry.applications.instances.values()].some(w => w instanceof AWCPaperDoll && w.actor === actor);
+      if (open) {
+        collapser.style.display = "none";
+      }
+    });
+  }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "awc-sidebar-uncollapse unbutton always-interactive";
+  btn.dataset.tooltip = "JOURNAL.ViewExpand";
+  btn.setAttribute("aria-label", game.i18n.localize("JOURNAL.ViewExpand"));
+  btn.innerHTML = `<i class="fas fa-caret-right" inert></i>`;
+
+  btn.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const sheetRoot = el.closest(".sheet.actor.character") ?? el;
+
+    if (sheetRoot.classList.contains("sidebar-collapsed")) {
+      // Collapsed -> Half
+      sheetRoot.classList.remove("sidebar-collapsed");
+      sheetRoot.classList.add("awc-sidebar-half");
+      if (app?._sidebarCollapsedKeyPath) {
+        await game.user.setFlag("dnd5e", app._sidebarCollapsedKeyPath, false);
+      }
+      // .sidebar-collapser may still be hidden (from the pop-out-open click)
+      // or showing the pop-out icon/tooltip — restore both to normal.
+      collapser.style.display = "";
+      const icon = collapser.querySelector("i");
+      if (icon) {
+        icon.classList.remove("fa-person");
+        icon.classList.add("fa-caret-left");
+      }
+      collapser.dataset.tooltip = "JOURNAL.ViewCollapse";
+      collapser.setAttribute("aria-label", game.i18n.localize("JOURNAL.ViewCollapse"));
+    } else {
+      // Half -> Full
+      sheetRoot.classList.remove("awc-sidebar-half");
+    }
+
+    // Same reason wireSidebarCollapseReflow re-runs these on
+    // .sidebar-collapser's own click: neither state change here calls
+    // render(), so nothing in the normal per-render pipeline re-runs on
+    // its own. Missing this is exactly what left the search bar stuck in
+    // its Half-mode-relocated (or native) DOM position after stepping up
+    // through THIS button specifically — .sidebar-collapser's click
+    // handles the Full<->Half step directly, but Collapsed->Half only
+    // ever goes through this one.
+    requestAnimationFrame(() => {
+      relocateToolsUnderSaves(el);
+      relocateSearchAndAttunement(el);
+      relocateConditionsIntoEffectsList(el);
+      reflowItemsList(el, { listSelector: '.tab[data-tab="effects"] .items-list.effects-list' });
+    });
+  });
+
+  collapser.insertAdjacentElement("afterend", btn);
+}
+
+// ─── HP/HD Fraction Alignment ───────────────────────────────────────────────
+
+/**
+ * Measures HP's and HD's value/max fraction ("32/32", "3/3") against
+ * .death-tray's actual rendered center — always horizontally centered on
+ * the sidebar card, confirmed live — and writes the pixel difference to
+ * each fraction's own --awc-fraction-shift custom property, applied by a
+ * translateX in paper-doll.css. Empirical rather than predicted: two
+ * separate CSS-only attempts to compensate for HP's fraction sitting in a
+ * narrower box than HD's (.progress.hit-points is narrower than the full
+ * bar by .tmp's width, a flex sibling) both checked out algebraically but
+ * didn't land correctly live, so this measures the actual rendered result
+ * instead of re-deriving it from the box model a third time.
+ *
+ * Resets both fractions' shift to 0 before measuring — otherwise a
+ * previous call's correction would still be applied while measuring the
+ * "current" position, understating the delta needed and only converging
+ * to the right value gradually (or not at all) across repeated calls
+ * instead of landing correctly on this one.
+ */
+function alignHpHdFractionsToDeathTray(el) {
+  const card = el.querySelector(".sheet-body .sidebar .card");
+  const deathTray = card?.querySelector(":scope > .death-tray");
+  const hpLabel = card?.querySelector(".meter-group .progress.hit-points > .label");
+  const hdLabel = card?.querySelector(".meter-group .meter.hit-dice.progress > .label");
+  if (!card || !deathTray || !hpLabel || !hdLabel) return;
+
+  for (const label of [hpLabel, hdLabel]) label.style.setProperty("--awc-fraction-shift", "0px");
+
+  const trayRect = deathTray.getBoundingClientRect();
+  const targetCenter = trayRect.left + trayRect.width / 2;
+
+  for (const label of [hpLabel, hdLabel]) {
+    const rect = label.getBoundingClientRect();
+    const shift = targetCenter - (rect.left + rect.width / 2);
+    label.style.setProperty("--awc-fraction-shift", `${shift}px`);
+  }
+}
+
+/**
+ * Runs the alignment once immediately (so it's correct on first paint,
+ * not just after the observer's first async callback) and wires a
+ * ResizeObserver on .card to re-run it whenever the card's rendered width
+ * changes — sidebar mode toggling (Full/Half/Collapsed, which doesn't
+ * call render()) and plain window resizing both change the bar widths
+ * this depends on. Safe to call every render: Foundry rebuilds the sheet
+ * DOM fresh each render, so the old .card (and any observer still
+ * attached to it) is simply discarded, not accumulated.
+ */
+function wireHpHdFractionAlignment(el) {
+  const card = el.querySelector(".sheet-body .sidebar .card");
+  if (!card) return;
+
+  alignHpHdFractionsToDeathTray(el);
+
+  const observer = new ResizeObserver(() => alignHpHdFractionsToDeathTray(el));
+  observer.observe(card);
+}
+
 // ─── 0. Sheet ↔ Doll synchronization ─────────────────────────────────────────
 
 /**
@@ -556,6 +1199,15 @@ function injectACBreakdown(el, ac) {
   // no-op the whole time. Kept as the first alternative (highest priority)
   // with the older generic patterns still checked after, for dnd5e v3 /
   // other sheet layouts.
+  //
+  // In the Half sidebar state (paper-doll.css's .awc-sidebar-half) this
+  // element is hidden entirely via display:none — the doll's own capacity
+  // bar shows the same calculated AC total there instead (doll-embed.js's
+  // buildCapacityBarHTML). Everything below still runs and still wires
+  // this element's hover listeners every render regardless of state;
+  // display:none is sufficient on its own to remove it from layout, hit-
+  // testing, and focus, so there's no separate half-mode branch needed
+  // here — a hidden element's listeners are simply never triggered.
   const acEl = el.querySelector(
     '.ac-badge, [data-prop="system.attributes.ac.value"], [data-field="system.attributes.ac.value"], ' +
     '.ac .value, .attribute.ac, .stat.ac, .defense.ac, [data-stat="ac"]'

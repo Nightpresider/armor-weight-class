@@ -368,6 +368,302 @@
   --awc-doll-slot-size: 46px;
 }
 
+/* ================================================================
+   HALF-COLLAPSE (scripts/hooks.js's patched _toggleSidebar, scripts/
+   sheet-inject.js's injectSidebarUncollapseButton)
+   Intermediate state between full sidebar and fully collapsed — doll
+   slots, portrait, and Favorites all stay visible at roughly half width
+   instead of disappearing outright. All values first-pass, tune live.
+   ================================================================ */
+
+/* --dnd5e-sheet-sidebar-width is the single source of truth this whole
+   module already keys off (paper-doll.css:346-354 above) — dnd5e's own
+   native CSS derives BOTH .main-content's grid column width AND
+   .ability-scores' left offset from it, so overriding it here alone
+   gets the half-width sidebar column plus automatically gives the
+   Details tab's ability-score row extra room too, for free. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half {
+  --dnd5e-sheet-sidebar-width: 210px;
+}
+
+/* Doll slots shrink further than the already-reduced 46px embed size
+   (paper-doll.css:356-369 above) to actually fit the halved column.
+   Sidebar width dropped to exactly 50% (420px -> 210px) — matching that
+   ratio here (46px * 0.5 ≈ 23px) rather than an arbitrary smaller value,
+   since a slot shrink that undershoots the container's own shrink ratio
+   leaves slots proportionally BIGGER relative to their new container
+   than at full width, which is what was overflowing/crowding the more
+   complex bottom row (hand-pairs + ring trio, space-between across the
+   full width) even though the simpler side columns tolerated it fine. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .portrait.awc-doll-embedded {
+  --awc-doll-slot-size: 23px;
+}
+
+/* Favorites' 2-column grid (armor-weight-class.css:856-860) doesn't fit
+   at half width — back to a single column here. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .favorites > ul {
+  grid-template-columns: 1fr;
+}
+
+/* .drop (the trailing "DROP FAVORITE" placeholder <li>, dnd5e.css:9193-
+   9202 / armor-weight-class.css:958-963) renders unconditionally
+   regardless of favorite count — in the single narrow column above it's
+   just an extra dashed box eating vertical space, not worth showing. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .favorites > ul .drop {
+  display: none;
+}
+
+/* The 2-column layout's vertical divider (armor-weight-class.css:986-993,
+   border-left on every even DOM position — column 2's own left edge)
+   doesn't know the grid collapsed to one column above — nth-child(2n)
+   still matches every other row regardless, leaving a stray dashed line
+   running through them with no second column left to divide from. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .favorites > ul li:not(.drop):nth-child(2n) {
+  border-left: none;
+  padding-left: 0;
+}
+
+/* Favorites title hidden at half width (list itself stays) — just the
+   heading text, to reclaim a bit more vertical room. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .favorites > h3 {
+  display: none;
+}
+
+/* HP's fraction ("32/32") inherits .meter.hit-points' native font-size
+   (var(--font-size-16), dnd5e.css:7610-7613) — 2px bigger than HD's
+   ("3/3", var(--font-size-14), dnd5e.css:7624-7627). Matched to HD's here
+   rather than a hardcoded px number, same reasoning as the AC BADGE VALUE
+   section further below. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .stats .meter-group .progress.hit-points > .label {
+  font-size: var(--font-size-14);
+}
+
+/* Exhaustion pips (.pips:first-of-type/:last-of-type) — native/Full-mode
+   left/right:9.3rem (148.8px, this file's own Full-mode rule further
+   below) was tuned for the 420px-wide Full sidebar. The Half sidebar is
+   only 210px wide (--dnd5e-sheet-sidebar-width override above) — 148.8px
+   from EACH edge already eats nearly the entire column, so every prior
+   "+Npx toward center" nudge stacked on top of 9.3rem was still landing
+   almost entirely outside/at the very edge of the visible card, which is
+   why none of them ever visibly moved anything. Rebased here to roughly
+   half the Full-mode offset (proportional to the halved sidebar width)
+   instead of continuing to add pixels onto a base that doesn't fit this
+   width at all. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .stats .top .pips:first-of-type {
+  left: calc(4.65rem - 21px);
+}
+
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .stats .top .pips:last-of-type {
+  right: calc(4.65rem - 21px);
+}
+
+/* Portrait image: native is width:100%/height:100% (paper-doll.css:
+   39-47), scaling down WITH its shrinking container. Asked for the
+   opposite — stay at today's full-width rendered size, centered, with
+   the now-overflowing left/right edges clipped rather than the whole
+   image shrinking. Fixed width (~400px, matching .portrait's own width
+   at the native 420px sidebar minus its small padding) instead of
+   100%, centered via left:50%/translateX on the existing
+   position:absolute, clipped by overflow:hidden on the parent. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .portrait.awc-doll-embedded {
+  overflow: hidden;
+  /* Crop the bottom 1/3 of the portrait image (native full height is
+     440px, paper-doll.css:385-387) — .awc-doll-content/.awc-doll-
+     foreground (the slot grid overlay, both height:100% of this box)
+     shrink right along with it, so the slot grid itself stays fully
+     within the now-shorter visible area rather than getting clipped —
+     only the decorative background image (fixed-height below, clipped
+     by this overflow:hidden) loses its bottom third. Everything that
+     follows .portrait in normal document flow within .card (.stats —
+     AC badge, exhaustion pips, HP/HD bars — then .death-tray, then
+     .favorites) shifts up by this same reduction automatically, since
+     they're siblings stacked below a now-shorter box — no separate
+     per-element rule needed for that part. */
+  height: calc(440px * 2 / 3);
+}
+
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .portrait.awc-doll-embedded .awc-doll-portrait {
+  width: 400px;
+  /* Image was still scaling down with its shrinking container despite
+     this width override — width alone doesn't override a separate
+     max-width constraint (a common "responsive images" default,
+     max-width:100%, likely from Foundry's own core CSS, not present in
+     this system's own dnd5e.css so not directly confirmed) — max-width
+     is a distinct property from width and isn't overridden just by
+     width winning the cascade, it still caps the final computed size
+     regardless. Explicit max-width:none guarantees nothing else can
+     constrain it back down. */
+  max-width: none;
+  /* Fixed at its full native height too (not 100%, which would now
+     mean 100% of the shrunk 2/3-height .portrait) — stays anchored at
+     top:0 (native, untouched), so overflow:hidden on the parent above
+     clips only the bottom, matching "crop the bottom third" rather than
+     scaling the whole image down or centering the crop. */
+  height: 440px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Bottom hand-pairs/ring row (.awc-doll-lower, pushed to the very bottom
+   of its flex column via margin-top:auto) and the AC badge (native
+   margin-top:-53px, paper-doll.css:594-600) both shifted up at half
+   width — confirmed this was the bulk of the missing-bottom-row issue
+   (.awc-doll-foreground's overflow-y:auto scrolling it out of view
+   rather than it actually disappearing, per the CSS overflow spec quirk
+   noted originally). Bumped from 10px to 20px total. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .awc-doll-lower {
+  transform: translateY(-24px);
+}
+
+/* Native AC number hidden entirely at half width — the AWC capacity bar
+   (atop the doll, doll-embed.js's buildCapacityBarHTML) now shows the same
+   calculated total on its own indicator icon, in both Half and Full, so
+   this badge would just be a redundant second number crammed into an
+   already-tight column. sheet-inject.js's injectACBreakdown still runs and
+   still wires this element's hover listeners every render (unchanged) —
+   display:none removes it from layout/hit-testing/focus entirely, so that
+   wiring is simply inert here rather than needing its own half-mode
+   conditional. The old margin-top nudge this replaced is dropped along
+   with it — no longer meaningful once the element isn't shown. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .stats .ac-badge {
+  display: none;
+}
+
+/* Exhaustion pips + the collapsed death-saves toggle, reordered into one
+   compact row just under the (cropped) doll instead of their Full-mode
+   spots — pips at .stats' own top:100px (paper-doll.css:774-796, tuned for
+   the Full-height doll's taller .stats content) and the death-tray's skull
+   tab pinned near .card's natural bottom via the native tray-height
+   formula (dnd5e.css:9095-9107). With the AC badge hidden above, the space
+   between the two pip groups is free now, so both land there instead.
+   .stats' own top edge already coincides with the doll's cropped bottom
+   edge (the crop rule above) — no separate positioning needed for that
+   part, just a small offset down from it. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .stats .top .pips {
+  top: 1px;
+  /* Native padding:10px on all sides (dnd5e.css:9017-9021) — way more
+     buffer than this narrow column has room for around already-shrunk
+     10px pip circles. */
+  padding: 1px;
+}
+
+/* .death-tray positions itself via top: calc(100% - var(--tray-height)),
+   where 100% is .card's own flow height (portrait + .stats — .death-tray
+   itself is absolute/out of flow, so it isn't part of that 100%). That
+   formula depends on .stats' true flow height, which isn't a fixed number
+   (its content is pulled up over the doll via negative margins) — rather
+   than reproduce it, pinning top directly to the same reference the pips
+   rule above uses: the doll's own known cropped height. Only the CLOSED-
+   state top is touched — .open keeps the native calc(100% - var(--lip))
+   (dnd5e.css:9108-9110), so opening the tray still slides it down to its
+   normal near-the-bottom expanded position rather than trying to grow the
+   death-saves panel downward from up here too. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray {
+  top: calc(440px * 2 / 3 - 70px);
+}
+
+/* Skull tab (.death-tab, toggles .death-tray open/closed) wasn't clickable
+   after the move above — .death-tray sits at its native translateZ(-1px)
+   (dnd5e.css:9095-9107), BEHIND both the doll (.portrait, translateZ(2px),
+   dnd5e.css:8921-8924) and .stats (translateZ(3px), this file's own
+   override) in .card's 3D stacking context. Pulling the tray up into the
+   same row as the doll/stats put its own bounding box squarely under
+   those higher-Z elements, so every click there landed on them instead —
+   same "hit-testing goes by z-stacking, not what's painted" issue already
+   solved once for .ac-badge/.pips. Two parts: an explicit depth above
+   both (matching the pattern used everywhere else in this file), and
+   pointer-events:none on the tray itself (auto restored on the actual
+   interactive bits) so its own full-width box — tall enough to contain
+   the (currently hidden) death-saves panel — doesn't blanket-intercept
+   clicks meant for the exhaustion pips sharing this same row. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray {
+  transform: translateZ(8px);
+  pointer-events: none;
+}
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-tab,
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-saves .death-save,
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-saves .pip {
+  pointer-events: auto;
+}
+
+/* Step 1 of 3 (background only — sizing and open-direction come as
+   separate follow-up changes this time, so a regression is easy to
+   isolate to one cause). Native chrome stripped: the closed tab's own box
+   (.card-tab.horizontal background/box-shadow, dnd5e.css:8925-8939) and
+   the opened panel's box (.death-saves background:black/box-shadow/gold
+   ::after frame, dnd5e.css:9111-9129) — matches the transparent
+   .card/.stats treatment elsewhere in this file. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-tab,
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-tab:hover,
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-tab:focus,
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-saves {
+  background: none;
+  box-shadow: none;
+}
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .death-tray .death-saves::after {
+  display: none;
+}
+
+/* New step-up button (.awc-sidebar-uncollapse) — hidden in Full (neither
+   class present), shown once Half or Collapsed. Positioned directly
+   under .sidebar-collapser.
+
+   Native .sidebar-collapser is inset:0 auto 0 var(--sidebar-size)
+   (dnd5e.css:7788-7795) — but --sidebar-size is confirmed NEVER DEFINED
+   for .sheet.actor.character at all (only .sheet.actor.npc/.vehicle set
+   it, dnd5e.css:10502/11509). On the character sheet that whole `inset`
+   declaration is invalid at compute time and silently falls back to the
+   button's natural document-flow position — it's "working" today by
+   accident, not by that variable actually resolving. Using this
+   module's own --dnd5e-sheet-sidebar-width instead (defined, and kept
+   correct for both Full and Half by the .awc-sidebar-half override
+   above) rather than repeating the same broken reference.
+
+   Just placing this button "below" the old one at the same left inset
+   also put it entirely INSIDE the old button's own full-height hit
+   area — translateZ (below) made it render visually on top, but clicks
+   were still landing on the old (native) button underneath, which is
+   why clicking the new button was opening the pop-out instead (the old
+   button's own collapsed-state behavior). Real fix: shrink the old
+   button's own hit area to a fixed top slice once this button might
+   also be present, so the two genuinely don't overlap — see the
+   .sidebar-collapser override right below. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .sidebar-collapser,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .sheet-body .sidebar .card .sidebar-collapser {
+  inset: 0 auto auto var(--dnd5e-sheet-sidebar-width);
+  height: 32px;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .awc-sidebar-uncollapse {
+  display: none;
+  position: absolute;
+  top: 32px;
+  left: var(--dnd5e-sheet-sidebar-width);
+  width: 16px;
+  height: 24px;
+  padding: 0;
+  color: var(--dnd5e-color-gold);
+  background: transparent;
+  /* .card is transform-style:preserve-3d (native) — a real 3D stacking
+     context where plain z-index doesn't reliably control layering;
+     other injected elements in this same area (.stats at translateZ(3px),
+     the pips at translateZ(10px), paper-doll.css:513/682) all needed an
+     explicit depth to render in front rather than being invisibly
+     obscured by higher-Z native content sharing the same 2D position.
+     This button had none, which is the likely reason it wasn't showing
+     at all — went higher than the pips' 10px to be safe. Still needed
+     even with the non-overlapping hit areas above — this is about paint
+     order, not click routing. */
+  transform: translateZ(15px);
+}
+
+.dnd5e2.sheet.actor.character.awc-sidebar-half .sheet-body .sidebar .card .awc-sidebar-uncollapse,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .sheet-body .sidebar .card .awc-sidebar-uncollapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* .portrait's native height comes entirely from its <img>/<video> child
    (min-height: var(--dnd5e-sheet-sidebar-width), max-height: 300px —
    dnd5e.css:8957-9004) — rules that don't apply at all once that child is
@@ -543,25 +839,31 @@
    parent's exact flex context right. HP and HD need separate selectors
    since HP's .label lives one level deeper (.meter.sectioned >
    .progress.hit-points > .label) than HD's (.meter.hit-dice.progress >
-   .label directly). */
+   .label directly).
+
+   That still doesn't land HP's fraction in the same place as HD's — HP's
+   .label centers within .progress.hit-points, which is narrower than the
+   full bar by .tmp's width (the TMP input box, a flex sibling) — so it's
+   centered on the wrong box. Two follow-up attempts to compensate for
+   that gap purely in CSS (a padding-left hand-calculation, then an
+   absolute-position box extension past .tmp's width) both checked out
+   algebraically but didn't land correctly live — evidently something in
+   the actual cascade/render doesn't match the box model on paper, and
+   guessing a third time isn't a good use of another round-trip.
+
+   alignHpHdFractionsToDeathTray (sheet-inject.js) instead measures each
+   fraction's actual rendered center against .death-tray's actual
+   rendered center — always horizontally centered on the sidebar card,
+   confirmed live — and writes the pixel difference to --awc-fraction-
+   shift, applied below as a transform. Empirical instead of predicted:
+   correct regardless of whatever in the box model was making the CSS-
+   only math not match reality. */
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group .progress.hit-points > .label,
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group .meter.hit-dice.progress > .label {
   width: 100%;
   display: flex;
   justify-content: center;
-}
-
-/* HP's .progress.hit-points is only (full bar width - 50px), since .tmp
-   (native, width:50px — the TMP input box) is a sibling taking up the
-   rest of .meter.sectioned.hit-points' full width. Centering within that
-   narrower box lands ~25px left of the bar's TRUE center — where HD's
-   fraction sits, since .meter.hit-dice.progress has no such cutout.
-   padding-left here shifts a centered flex child right by half the added
-   padding, so 50px (matching .tmp's own width exactly) moves HP's
-   fraction the needed 25px right to align with HD's. HD gets no such
-   compensation — it doesn't need any. */
-.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .meter-group .progress.hit-points > .label {
-  padding-left: 50px;
+  transform: translateX(var(--awc-fraction-shift, 0px));
 }
 
 /* Exhaustion pips (either side of the AC badge) are sized entirely off
@@ -682,6 +984,16 @@
    yet — first guess below, tune live. */
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .death-tray {
   --tray-height: 72px; /* native default — raise this to move the skull up */
+}
+
+/* .sidebar is display:flex; flex-direction:column with a 16px gap
+   (dnd5e.css:8897-8900) between its two children — .card (portrait/doll,
+   stats, pips, death-tray) and .favorites — that gap is the space
+   between the exhaustion pips row and the "FAVORITES" header below.
+   Brought down close to 0 so FAVORITES sits almost flush with the pips
+   row; tune live. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar {
+  gap: 2px;
 }
 
 /* Matches the portrait frame's own rounded top corners (dnd5e.css's

@@ -23,6 +23,39 @@
   --awc-radius:        4px;
 }
 
+/* ================================================================
+   EXPERIMENTAL — SHEET-WIDE TEXT OUTLINE PREVIEW
+   Applying .awc-target-number's crisp 4-direction outline effect
+   (TARGET COLUMN SHAPE ICONS section, below) to every piece of text on
+   the sheet, as a live preview — text-shadow is an inherited property,
+   so one rule on the sheet root cascades to essentially everything
+   unless something more specific already sets its own (that still wins
+   normally, e.g. .awc-target-number itself is unaffected either way
+   since the values are identical). Easy to remove: delete this rule
+   alone, nothing else depends on it. */
+.dnd5e2.sheet.actor.character {
+  text-shadow:
+    -1.3px -1.3px 1.3px rgba(0,0,0,0.9),
+     1.3px -1.3px 1.3px rgba(0,0,0,0.9),
+    -1.3px  1.3px 1.3px rgba(0,0,0,0.9),
+     1.3px  1.3px 1.3px rgba(0,0,0,0.9);
+}
+
+/* Exclusions from the sheet-wide outline above — text-shadow is
+   inherited, so these opt back out individually rather than the sheet
+   root not setting it at all.
+   - .mode-slider: the play/edit slide-toggle in the window header
+     (dnd5e.mjs _renderModeToggle — <slide-toggle class="mode-slider">).
+     Its thumb renders through an icon glyph, so the outline blurred it.
+   - .separator: the "/" between value/max in every meter's fraction
+     (HP, HD, encumbrance, uses, etc. — same class system-wide, per
+     dnd5e's own .dnd5e2 .meter .label .separator rule). The outline
+     made it look heavier/different from the plain digits around it. */
+.dnd5e2.sheet.actor.character .window-header .mode-slider,
+.dnd5e2.sheet.actor.character .separator {
+  text-shadow: none;
+}
+
 /* ── Colour helpers ── */
 .awc-unarmored { color: var(--awc-unarmored); }
 .awc-light     { color: var(--awc-light);     }
@@ -36,8 +69,9 @@
    overlay on the native encumbrance widget — that widget is hidden below
    instead, since AWC's own thresholds (4 brackets) can't be represented by
    the native meter's 2-breakpoint --bar-percentage mechanism anyway.
-   Renders only vertical threshold marker lines and a bracket-colored
-   circle dot (the weight indicator). No fill, no chrome.
+   Renders vertical threshold marker lines and a bracket icon (fist/
+   shield tiers) with the calculated AC total centered on it — the AC
+   indicator. No fill, no chrome.
    ================================================================ */
 
 .awc-capacity-bar {
@@ -64,28 +98,257 @@
   z-index: 11;
 }
 
-/* ── Weight indicator (bracket-colored circle) ── */
-.awc-weight-indicator {
+/* ── AC indicator (bracket icon + centered calculated AC number) ──
+   Replaces the old plain circle dot. Rides the same left:%
+   position along the bar as the old indicator did (still driven by
+   cap.ratio in doll-embed.js), but now shows the live AC total,
+   always centered on the icon regardless of where the icon sits —
+   the number is a normal-flow child laid out via flex centering on
+   the indicator itself, not separately positioned. Icon shape/size
+   changes per bracket below (fist for unarmored, shield tiers for
+   light/medium/heavy, heavy shape reused + red pulse for over) so it
+   visibly changes as thresholds are met/surpassed, same as the
+   color already did. */
+.awc-ac-indicator {
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+  width: 30px;
+  height: 30px;
   z-index: 12;
   pointer-events: all;
   cursor: default;
-  border: 1.5px solid rgba(255, 255, 255, 0.55);
-  transition: left 0.3s ease;
+  transition: left 0.3s ease, width 0.2s ease, height 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.awc-weight-indicator.awc-unarmored { background: var(--awc-unarmored); }
-.awc-weight-indicator.awc-light     { background: var(--awc-light);     }
-.awc-weight-indicator.awc-medium    { background: var(--awc-medium);    }
-.awc-weight-indicator.awc-heavy     { background: var(--awc-heavy);     }
-.awc-weight-indicator.awc-over      {
+/* Icon layer — sits behind the number, fills the indicator's box. Fist
+   uses a real Font Awesome glyph (dnd5e already bundles FA6 free, and
+   this module uses fa-solid icons elsewhere, e.g. the sidebar pop-out
+   button's fa-person). Shields don't exist as distinct shape/tier icons
+   in FA's free set, so light/medium/heavy/over instead draw their own
+   shape via a clip-path'd ::before, sized/shaped bigger per tier to read
+   as "bigger shield" the way the reference images did. */
+.awc-ac-indicator-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+}
+
+.awc-ac-indicator.awc-unarmored .awc-ac-indicator-icon { color: var(--awc-unarmored); }
+.awc-ac-indicator.awc-unarmored .awc-ac-indicator-icon i { font-size: 23px; }
+
+.awc-ac-indicator.awc-light  { width: 30px; height: 30px; }
+.awc-ac-indicator.awc-medium { width: 35px; height: 35px; }
+.awc-ac-indicator.awc-heavy,
+.awc-ac-indicator.awc-over   { width: 41px; height: 41px; }
+
+.awc-ac-indicator.awc-light .awc-ac-indicator-icon::before,
+.awc-ac-indicator.awc-medium .awc-ac-indicator-icon::before,
+.awc-ac-indicator.awc-heavy .awc-ac-indicator-icon::before,
+.awc-ac-indicator.awc-over .awc-ac-indicator-icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+}
+
+/* Round shield (Light). */
+.awc-ac-indicator.awc-light .awc-ac-indicator-icon::before {
+  clip-path: circle(48%);
+  background: var(--awc-light);
+}
+
+/* Kite shield (Medium) — pointed base, rounded shoulders. */
+.awc-ac-indicator.awc-medium .awc-ac-indicator-icon::before {
+  clip-path: polygon(50% 0%, 100% 18%, 100% 60%, 50% 100%, 0% 60%, 0% 18%);
+  background: var(--awc-medium);
+}
+
+/* Tower shield (Heavy) — flatter shoulders, squared-off, largest. */
+.awc-ac-indicator.awc-heavy .awc-ac-indicator-icon::before,
+.awc-ac-indicator.awc-over .awc-ac-indicator-icon::before {
+  clip-path: polygon(50% 0%, 100% 12%, 100% 55%, 85% 92%, 50% 100%, 15% 92%, 0% 55%, 0% 12%);
+  background: var(--awc-heavy);
+}
+
+.awc-ac-indicator.awc-over .awc-ac-indicator-icon::before {
   background: var(--awc-over);
+}
+
+.awc-ac-indicator.awc-over {
   animation: awc-pulse 1s ease-in-out infinite;
+}
+
+/* AC number — always on top of and centered on the icon. */
+.awc-ac-indicator-value {
+  position: relative;
+  z-index: 1;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--awc-text-full);
+  text-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9);
+}
+
+/* ================================================================
+   TARGET COLUMN SHAPE ICONS
+   sheet-inject.js's iconifyTargetColumn replaces the spelled-out shape
+   word AND its unit in the items list's Target column ("5 ft sphere" ->
+   bare "5" stamped on top of the shape icon) with one of target-icons.js's
+   small SVGs, saving the horizontal space the spelled-out name and unit
+   were taking in an 80px-wide column (dnd5e.css:13006-13010). The number
+   layers on top of (not beside) the icon.
+
+   The container is NOT sized to the icon — it sizes to the number text
+   alone (no explicit width/height), so growing the icon never grows the
+   row/column it lives in. The icon is centered on the container via
+   top:50%/left:50%/translate (not inset:0, which would just pin its
+   edges to the container's and get clipped/distorted by an explicit
+   width bigger than that box) so it can freely overflow past the
+   container's own bounds in all directions while staying centered under
+   the number, however large it gets. */
+.item-target .condensed.awc-target-iconified {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.awc-target-shape-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 35px;
+  height: 35px;
+  /* Common gold accent used throughout the sheet (AC badge, sidebar
+     buttons, etc.) rather than the AC indicator's dimmer bracket-color
+     scheme — this icon isn't state-colored like that one. Individual
+     target types below override this per type (ally/willing green,
+     enemy red) — self/creature/object/space/creatureOrObject/any all
+     keep this default gold. */
+  color: var(--dnd5e-color-gold);
+}
+
+/* Ally/willing-creature and enemy reuse the same person silhouette
+   (target-icons.js's PERSON_OUTLINE) as plain creature, distinguished
+   only by color — --awc-light is this module's existing green (used for
+   the Light encumbrance bracket elsewhere), --dnd5e-color-red is
+   dnd5e's own native red accent (used for its own failure/danger
+   states). */
+.awc-target-icon-ally,
+.awc-target-icon-willing {
+  color: var(--awc-light);
+}
+.awc-target-icon-enemy {
+  color: var(--dnd5e-color-red);
+}
+
+.awc-target-number {
+  position: relative;
+  z-index: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--awc-text-full);
+  /* Crisp 4-direction outline instead of a soft blur glow (the previous
+     value was two IDENTICAL blurred shadows stacked — redundant, not
+     actually more legible) — reads more clearly at small sizes over the
+     mid-tone gold icon behind it. */
+  text-shadow:
+    -1.3px -1.3px 1.3px rgba(0,0,0,0.9),
+     1.3px -1.3px 1.3px rgba(0,0,0,0.9),
+    -1.3px  1.3px 1.3px rgba(0,0,0,0.9),
+     1.3px  1.3px 1.3px rgba(0,0,0,0.9);
+}
+
+/* ================================================================
+   SPELL SCHOOL ICON — MOVED BEHIND TIME COLUMN
+   sheet-inject.js's overlaySchoolIconOnTime clones the native school icon
+   (.item-school, its own 40px column — dnd5e.css:12937-12943) behind the
+   Time column's text instead, same icon-behind-number overlay technique
+   as the Target column above; .item-school itself is hidden below since
+   nothing needs its own column anymore.
+   ================================================================ */
+
+.item-time .condensed.awc-school-iconified {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.awc-school-icon-wrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  /* Native .item-school sets these on itself (dnd5e.css:12958-12962) —
+     dnd5e-icon's shadow-rendered svg reads them as inherited custom
+     properties, which the clone loses once it's no longer a descendant
+     of .item-school. Re-set here so it stays the same gold it always
+     was, at the requested 35x35. */
+  --icon-fill: var(--dnd5e-color-gold);
+  --icon-size: 35px;
+}
+
+.awc-school-time-text {
+  position: relative;
+  z-index: 1;
+}
+
+/* The column itself (header cell + every row's cell) is redundant now
+   that its icon lives behind Time instead — dnd5e.css:12937-12943/
+   12958-12962. */
+.item-school {
+  display: none;
+}
+
+/* ================================================================
+   SPELLS TAB — USES MERGED INTO PREPARED
+   sheet-inject.js's mergeUsesIntoPrepared moves the Uses fraction on top
+   of the Prepared toggle button when a spell has both (usually mutually
+   exclusive per the user) — the Uses column itself (.item-uses,
+   inventory/columns/uses.hbs) is hidden outright on this tab either way.
+   ================================================================ */
+
+.tab[data-tab="spells"] .item-uses {
+  display: none;
+}
+
+.awc-prepared-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.awc-prepared-uses {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  font-size: 0.6rem;
+  line-height: 1;
+  color: var(--awc-text-mid);
+}
+
+/* Native .item-uses input styling (dnd5e.css) is scoped to that
+   selector — doesn't follow once the input is moved out of .item-uses
+   and in here, so it needs its own minimal look. */
+.awc-prepared-uses input {
+  width: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: right;
+  font-size: inherit;
+  color: inherit;
 }
 
 /* AWC's own bar no longer inserts into .encumbrance.card — Phase 2 renders
@@ -428,6 +691,7 @@
    else on the sheet. */
 .dnd5e2.sheet.actor.character .ability-scores .rows {
   padding-top: 30px;
+  width: 100%;
 }
 
 @container (min-width: 700px) {
@@ -452,6 +716,314 @@
   order: 2;
 }
 
+/* Shrink the STR/DEX/CON/INT/WIS/CHA hexagon blocks — native size is
+   64x64px each with a 50x23px score box (dnd5e.css:9581-9643). First-pass
+   scale-down, tune live. */
+.dnd5e2.sheet.actor.character .ability-scores .ability-score {
+  width: 52px;
+  height: 52px;
+}
+
+.dnd5e2.sheet.actor.character .ability-scores .ability-score .label {
+  font-size: 9px;
+}
+
+.dnd5e2.sheet.actor.character .ability-scores .ability-score .mod {
+  font-size: var(--font-size-13);
+}
+
+.dnd5e2.sheet.actor.character .ability-scores .ability-score .score {
+  width: 40px;
+  height: 19px;
+  font-size: var(--font-size-11);
+}
+
+.dnd5e2.sheet.actor.character .ability-scores .ability-score .score > input {
+  width: 40px;
+  height: 19px;
+}
+
+/* At a narrow window width, this row (.rows was fixed at 546px wide
+   natively, dnd5e.css:9563 — overridden to width:100% above so it can
+   never be wider than .ability-scores' own box) used to have nowhere to
+   shrink to, spilling its content past the sheet's own bounds and into
+   the vertical tab-selector rail on the right (.vertical-tabs nav.tabs,
+   dnd5e.css:3423-3435, position:absolute at the sheet's right edge).
+   .ability-scores already has container-type:inline-size (dnd5e.css:
+   9551-9557), so its own measured width can drive a real responsive
+   shrink here instead of just wrapping onto more and more rows at a
+   fixed hexagon size. One tier — first pass had a second, smaller tier
+   too, but that overshot; this is the floor now. Breakpoint narrowed
+   (550px → 450px) so it triggers later, closer to where overlap
+   actually starts, rather than kicking in with room still to spare —
+   still first-pass, tune live. */
+@container (max-width: 450px) {
+  .dnd5e2.sheet.actor.character .ability-scores .ability-score {
+    width: 40px;
+    height: 40px;
+  }
+
+  .dnd5e2.sheet.actor.character .ability-scores .ability-score .label {
+    font-size: 7px;
+  }
+
+  .dnd5e2.sheet.actor.character .ability-scores .ability-score .mod {
+    font-size: var(--font-size-10);
+  }
+
+  .dnd5e2.sheet.actor.character .ability-scores .ability-score .score,
+  .dnd5e2.sheet.actor.character .ability-scores .ability-score .score > input {
+    width: 30px;
+    height: 15px;
+    font-size: var(--font-size-9);
+  }
+}
+
+/* Tighten vertical space between Skills/Tools/Saves rows — native is a
+   uniform padding: 0.375rem per <li> (dnd5e.css:9319-9327); overriding
+   just the block-axis half leaves the row's horizontal padding untouched.
+   First-pass shrink, tune live. */
+.dnd5e2.sheet.actor.character .sheet-body .skills > ul > li,
+.dnd5e2.sheet.actor.character .sheet-body .tools > ul > li,
+.dnd5e2.sheet.actor.character .sheet-body .saves > ul > li {
+  padding-block: 0.15rem;
+}
+
+/* Saves title ("SAVING THROWS") — same centering source as Tools
+   (.dnd5e2 filigree-box > h3, dnd5e.css:3820-3824), same fix. */
+.dnd5e2.sheet.actor.character .saves > h3 {
+  justify-content: flex-start;
+}
+
+/* align-self:flex-start (shrink-wrap the box to its content) turned out
+   to conflict with .saves' own container-type:inline-size (native,
+   dnd5e.css:9392-9394): a size-query container's own inline size isn't
+   supposed to depend on its content/children, so combining the two gave
+   unstable results — the box could get squeezed narrower than its
+   content actually needed once the window itself got tight, clipping the
+   bonus numbers entirely instead of stopping at a floor. Reverting to
+   the default stretch (fills .right's width, same as Tools/Skills) gives
+   the container query below a stable, non-circular width to react to.
+   min-width is a concrete floor sized to the single-column layout's own
+   minimum legible width, not min-content (same containment conflict) —
+   tune live if it still clips at extreme widths. */
+.dnd5e2.sheet.actor.character .sheet-body .saves {
+  min-width: 160px;
+}
+
+/* One column by default (native was 1fr 1fr, dnd5e.css:9396-9399); once
+   .saves' own measured width comfortably fits two content-sized columns
+   plus the 15px gap and card framing (~250px), switch to two. Uses
+   .saves' existing container-type:inline-size (native), so this reacts
+   to the box's own width, not the whole window's.
+
+   Deliberately kept BELOW native's own @container (min-width: 300px) on
+   this same element (dnd5e.css:9431-9438), which swaps abbreviated codes
+   (STR/CON) for full names (Strength/Constitution) at that width — this
+   breakpoint fires first so the two-column layout appears while still
+   abbreviated, matching the 34px fixed name-box below. At 300px+ both
+   breakpoints are active at once (2 columns AND full names) — the 34px
+   name box is too narrow for that combination and will clip; needs its
+   own widened tier if the sidebar ever actually gets that roomy. */
+.dnd5e2.sheet.actor.character .sheet-body .saves > ul {
+  grid-template-columns: max-content;
+}
+
+@container (min-width: 210px) {
+  .dnd5e2.sheet.actor.character .sheet-body .saves > ul {
+    grid-template-columns: max-content max-content;
+  }
+}
+
+/* No padding-inline override here anymore — <li> falls back to the
+   native padding: 0.375rem it shares with Skills/Tools (dnd5e.css:
+   9319-9327), matching their horizontal rhythm exactly instead of a
+   custom column-gap value. That shared 0.375rem-per-side padding is
+   now what separates the two columns (6px + 6px between adjacent
+   cells), so column-gap is dropped from the rule above. */
+
+/* Saves' name box was native flex:1 (dnd5e.css:9365-9369), stretching to
+   fill its entire (formerly 1fr) grid cell — since the bonus number sits
+   right after it, that's what pushed "+1" etc. all the way out. A fixed
+   width sized to the abbreviated codes (STR/CON/WIS/...) currently shown
+   at this container width keeps the name-to-number gap tight, and since
+   it's the same fixed width on every row, the numbers still land at the
+   same x-position down each column. 34px first-pass — if the sidebar
+   ever widens enough to flip to full ability names (dnd5e's own
+   @container min-width:300px swap, dnd5e.css:9431-9438), this will be
+   too narrow and need bumping back up; tune live either way. */
+.dnd5e2.sheet.actor.character .sheet-body .saves .name {
+  flex: 0 0 34px;
+}
+
+/* ================================================================
+   PILLS-GROUP ROW LAYOUT (Movement, Senses, Resistances, Immunities,
+   Condition Immunities, Vulnerabilities, Damage Modification, Armor,
+   Weapons, Languages)
+   All of these share the exact same .pills-group > h3.icon + ul.pills
+   markup — the native partial (templates/actors/parts/actor-trait-
+   pills.hbs) for every one except Movement, which is AWC's own
+   injectMovementPillsGroup (sheet-inject.js) deliberately reusing the
+   identical shape so it picks up this same styling for free.
+
+   Native stacks h3 above ul as separate block rows (dnd5e.css:9498-9502
+   only sets margin-top/margin-bottom, no flex). The title is meant to
+   behave as the first item in one flat, wrapping flow — not "a fixed
+   header column with its own separately-wrapping list beside it". The
+   earlier version nested ul.pills as its own flex box, so once ITS
+   contents wrapped, the wrapped row stayed confined to the narrow
+   column to the right of the title instead of reclaiming the row's full
+   width. display:contents on .pills removes the <ul>'s own box from the
+   layout tree entirely (its native list-style/padding/margin/flex/gap
+   all stop applying) without removing its <li> children from the DOM —
+   they become direct flex items of .pills-group itself, alongside h3,
+   as one flat wrapping row. .pills .pill's own badge styling still
+   matches unaffected, since display:contents doesn't change the DOM
+   selectors run against.
+
+   padding-left matches Skills' own box inset (dnd5e.css:9314-9318,
+   1rem) for the same horizontal rhythm across every one of these
+   sections. gap replaces .pills' own native gap (0.25rem,
+   dnd5e.css:3713-3719 — no longer in effect once it's display:contents)
+   uniformly between the title and every pill, and between pills
+   themselves. */
+.dnd5e2.sheet.actor.character .sheet-body .pills-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  padding-left: 1rem;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .pills-group h3 {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .pills-group .pills {
+  display: contents;
+}
+
+/* Movement/Senses only: drop the " | " between a pill's label and value.
+   .pill is itself flex with gap:0.25rem between its children
+   (dnd5e.css:3721-3731) — hiding .separator just removes that one flex
+   item, and the existing gap collapses label/value together with a
+   plain space between them, no replacement content needed. Senses has
+   no distinguishing class of its own, so it's matched by its h3 icon
+   (fa-eye, per templates/actors/tabs/character-details.hbs:143) instead.
+   Every other pills-group (Immunities, Armor, Weapons, etc.) keeps its
+   separator untouched. */
+.dnd5e2.sheet.actor.character .sheet-body .pills-group.awc-movement-pills-group .pill .separator,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-eye) .pill .separator {
+  display: none;
+}
+
+/* Half the native pill padding (0.1875rem 0.375rem, dnd5e.css:3729) —
+   smaller boxes/borders per pill so more fit per row before wrapping. */
+.dnd5e2.sheet.actor.character .sheet-body .pills-group .pill {
+  padding: 0.09375rem 0.1875rem;
+}
+
+/* ================================================================
+   PLAIN-TEXT PILLS (Movement, Senses, Immunities, Vulnerabilities,
+   Armor, Weapons, Languages only)
+   Resistances, Condition Immunities, and Damage Modification are
+   deliberately EXCLUDED here — they keep the boxed-pill look above
+   (native border/background/border-radius, just the halved padding).
+
+   Each group below is matched via its own <h3> icon, the same
+   :has()-on-icon technique the separator-hiding rule above already
+   uses for Senses (character-details.hbs:141-178 has the icon/svg used
+   per partial call; Immunities' fa-shield is a distinct class token
+   from Resistances' fa-shield-halved, so there's no overlap risk).
+   Movement already carries its own class from sheet-inject.js. */
+.dnd5e2.sheet.actor.character .sheet-body .pills-group.awc-movement-pills-group .pill,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-eye) .pill,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-shield) .pill,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-heart-crack) .pill,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 dnd5e-icon[src*="checked-shield"]) .pill,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 dnd5e-icon[src*="trait-weapon-proficiencies"]) .pill,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-flag) .pill {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  color: var(--pill-transparent-color);
+}
+
+/* Immunities/Vulnerabilities carry native .pill.green/.pill.maroon
+   (color-coding via a colored background fill, dnd5e.css:3734-3744) —
+   preserved here as text color instead, since the box-strip above
+   removes that background. Scoped through each group's own :has()
+   selector rather than a bare .pill.green/.pill.maroon, so Resistances'
+   and Condition Immunities' native green boxes (excluded above) are
+   untouched. --dnd5e-color-green/--dnd5e-color-maroon (dnd5e.css:47-48)
+   are dark swatches designed to sit UNDER light text, not stand alone —
+   check contrast live against the actual sheet body once applied. */
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-shield) .pill.green {
+  background-color: transparent;
+  border: none;
+  color: var(--dnd5e-color-green);
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-heart-crack) .pill.maroon {
+  background-color: transparent;
+  border: none;
+  color: var(--dnd5e-color-maroon);
+}
+
+/* ", " between pills within these same 7 groups. :not(:last-child)
+   resolves against .pill's real DOM parent (<ul class="pills">, whose
+   only children are <li class="pill">) — display:contents on .pills
+   (above) removes the <ul> from the box tree only, not the DOM, so this
+   still correctly skips each group's true last pill (no trailing
+   comma) and never considers <h3> at all (not a <li> sibling). An empty
+   group (.pills-group.empty, dnd5e.css:9504) has zero <li> children, so
+   it just never matches — nothing to special-case. No trailing space in
+   the content string — .pills-group's own gap (0.375rem, above) already
+   supplies the space after it. */
+.dnd5e2.sheet.actor.character .sheet-body .pills-group.awc-movement-pills-group .pill:not(:last-child)::after,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-eye) .pill:not(:last-child)::after,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-shield) .pill:not(:last-child)::after,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-heart-crack) .pill:not(:last-child)::after,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 dnd5e-icon[src*="checked-shield"]) .pill:not(:last-child)::after,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 dnd5e-icon[src*="trait-weapon-proficiencies"]) .pill:not(:last-child)::after,
+.dnd5e2.sheet.actor.character .sheet-body .pills-group:has(> h3 i.fa-flag) .pill:not(:last-child)::after {
+  content: ",";
+}
+
+/* ================================================================
+   TYPE/RACE/BACKGROUND CARDS (Fey/Bosmer/Outlander-style .pill-lg cards)
+   Native .pills-lg (dnd5e.css:9439-9442, inside .top.flexrow alongside
+   Saving Throws) stacks these three cards with an 8px gap between them —
+   zeroed so they sit flush. */
+.dnd5e2.sheet.actor.character .sheet-body [data-tab="details"] .pills-lg {
+  gap: 0;
+}
+
+/* Every pills-group (Movement, Senses, Immunities, Vulnerabilities,
+   Armor, Weapons, Languages, etc.) had two stacked sources of space
+   above it: .right's own flex gap between adjacent children (0.5rem,
+   dnd5e.css:9296-9300) PLUS this rule's own native margin-top (0.5rem,
+   dnd5e.css:9498-9499) — 16px combined. Zeroing the margin-top leaves
+   only .right's 8px gap standing, halving the total uniformly across
+   every section (Movement included — no longer special-cased once the
+   target spacing above it was set to match everything else). */
+.dnd5e2.sheet.actor.character .sheet-body .pills-group {
+  margin-top: 0;
+}
+
+/* Tools' <h3> ("🔧 TOOLS") is a <filigree-box class="tools"> — the generic
+   `.dnd5e2 filigree-box > h3 { justify-content: center }` rule
+   (dnd5e.css:3820-3824) centers it same as every other boxed section
+   header. Unlike Skills (which pushes its own injected proficiency span
+   right via margin-inline-start:auto, leaving the icon+text centered),
+   Tools has no such injected content, so left-aligning the whole header
+   directly is the simplest fix. */
+.dnd5e2.sheet.actor.character .tools > h3 {
+  justify-content: flex-start;
+}
+
 /* ================================================================
    SKILLS HEADER PROFICIENCY
    sheet-inject.js's injectSkillsProficiency() appends this span into the
@@ -468,6 +1040,24 @@
   color: var(--dnd5e-color-gold, var(--color-text-title));
   font-size: var(--font-size-11);
   text-transform: uppercase;
+}
+
+/* Sidebar-collapse triangle button — native inset:0 auto 0 var(--sidebar-
+   size) (dnd5e.css:7788-7795) pins both top AND bottom to 0, stretching
+   the button full-height with its icon centered inside — no single "top"
+   value to nudge directly. transform shifts the whole rendered button
+   (icon included) without disturbing that stretch. */
+.dnd5e2.sheet.actor.character .sidebar-collapser {
+  transform: translateY(-10px);
+  background: transparent;
+}
+
+/* Native rule sets a solid background on hover/focus (dnd5e.css:7796-7800,
+   var(--dnd5e-background-5)) — overridden here so the button stays fully
+   transparent in every state, matching the new step-up button beside it. */
+.dnd5e2.sheet.actor.character .sidebar-collapser:hover,
+.dnd5e2.sheet.actor.character .sidebar-collapser:focus-visible {
+  background: transparent;
 }
 
 /* ================================================================
@@ -520,3 +1110,658 @@
     the doll's own interactivity is confirmed solid with AC display off (see "Show AC
     Breakdown" world setting). */
 }
+
+/* ================================================================
+   FAVORITES — TWO COLUMN LIST
+   Native .favorites > ul (character-sidebar.hbs ~238-244, 372-377) is a
+   plain block list — one item per row, icon + name-stacked(title/
+   subtitle) + info(value/range), always terminated by a trailing .drop
+   ("DROP FAVORITE") <li> rendered unconditionally regardless of favorite
+   count. _prepareFavorites (dnd5e.mjs:58420-58502) returns a flat,
+   pre-sorted array with no grouping, so switching to display:grid gets
+   correct left-to-right/wrap-down fill AND correct reflow-on-delete for
+   free — dnd5e re-renders this list fresh from that same array on every
+   relevant re-render, grid auto-placement does the rest. No JS ordering
+   logic needed anywhere in this section.
+   ================================================================ */
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 0.5rem;
+}
+
+/* .drop is always the trailing <li>, outside the {{#each}} — left as a
+   normal (non-spanning) grid item so it auto-places into whichever
+   single cell is next, respecting the two-column layout instead of
+   taking the full row. Padding alone didn't reliably match a real
+   item's height, since that height actually comes from the 32px
+   figure/img icon (dnd5e.css:9203-9211) via align-items:center on the
+   shared li rule — .drop has no icon, so it needs an explicit
+   min-height pinned to that same number instead. .drop already inherits
+   display:flex/align-items:center from the shared li rule
+   (dnd5e.css:9169-9176) plus its own justify-content:center
+   (dnd5e.css:9193-9202), so min-height alone centers its text within
+   that height with no other changes needed. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul .drop {
+  min-height: 35px;
+  padding: 0.1875rem 0.755rem;
+  margin-top: 1px;
+  font-size: 9px;
+}
+
+/* Native divider exception is :first-child:not(.drop) (dnd5e.css:
+   9177-9180) — correct for one linear column, but in 2 columns the 2nd
+   DOM item (top of column 2) isn't :first-child and would wrongly get a
+   divider. :nth-child(-n+2) covers both true top-row items regardless
+   of total favorite count (odd/even), since .drop always spans its own
+   row separately via the rule above. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul li:not(.drop):nth-child(-n+2) {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+/* 1px divider buffer for every item below the top row — native was
+   .375rem/.375rem (6px/6px) padding-top/margin-top (dnd5e.css:
+   9169-9176). The rule above wins for the top-row exception regardless
+   of source order (extra pseudo-classes = higher specificity). */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul li {
+  padding-top: 1px;
+  margin-top: 1px;
+}
+
+/* Vertical divider between the two columns — :nth-child(2n) is every
+   even DOM position, i.e. every column-2 item given left-to-right fill.
+   Dashed to match .drop's own dashed border style. padding-left is a
+   first-pass buffer keeping the line clear of column-2's icon. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul li:not(.drop):nth-child(2n) {
+  border-left: 1px dashed var(--dnd5e-color-gold);
+  padding-left: 0.25rem;
+}
+
+/* Name/subtitle font size — native was 13px/10px (dnd5e.css:9219 and
+   the shared .name-stacked .subtitle rule at dnd5e.css:3806-3819); first
+   pass halved that to 6.5px/5px, bumped back up here to 9px/7px for
+   readability. min-width:0 is the standard flex-item shrink fix, needed
+   now that each item has roughly half its previous cell width to work
+   with. Value/range (.info .primary/.secondary) are untouched — only
+   name + subtitle were asked for. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul .name-stacked {
+  min-width: 0;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul .name-stacked .title {
+  font-size: 9px;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > ul .name-stacked .subtitle {
+  font-size: 7px;
+}
+
+/* 1px under the "FAVORITES" title — native was 0.5rem (8px),
+   dnd5e.css:9164-9168. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .favorites > h3 {
+  margin-bottom: 1px;
+}
+
+/* ================================================================
+   INVENTORY TAB — RELOCATED CURRENCY
+   sheet-inject.js's relocateInventoryCurrency() moves the native
+   section.currency (PP/GP/EP/SP/CP + Manage Currency button) into
+   .top .containers' spot — a native "equipped containers" strip
+   (dnd5e.css:7822, flex:1) that sits empty on this module's sheets since
+   the Paper Doll already handles bag/pouch equipping. flex:1 gives it
+   the same width-absorbing role .containers used to have, sharing .top
+   with .encumbrance normally.
+
+   A position:absolute variant was tried here to force "never below 2-3
+   columns, overlap .encumbrance instead of shrinking further" — it
+   didn't render reliably (ended up positioned nowhere near .top,
+   overlapping the window header instead) and wasn't safe to keep
+   debugging blind without live DevTools access. Back to plain flex
+   sharing space with .encumbrance — less exact about the column-count
+   floor, but predictable.
+
+   Native `.dnd5e2 section.currency { display:flex; gap:8px; }`
+   (dnd5e.css:13194-13197) isn't scoped to .inventory-element, so it keeps
+   applying wherever .currency physically ends up — this rule needs to be
+   at least as specific to win, which it is once .currency is nested
+   under .top.
+   ================================================================ */
+
+.dnd5e2.sheet.actor.character .tab[data-tab="inventory"] .top .currency {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.125rem;
+  margin-top: 5px;
+}
+
+/* Half the native gap between .encumbrance and .currency within .top
+   (1rem, dnd5e.css:7817) — was the whole flex row's own gap, so this
+   also affects nothing else, .top has exactly these two children. */
+.dnd5e2.sheet.actor.character .tab[data-tab="inventory"] .top {
+  gap: 0.5rem;
+}
+
+/* Icon positioning left fully native: label { position:relative }
+   (dnd5e.css:13199-13201) + i { position:absolute; inset:-2px auto auto
+   -2px; } (dnd5e.css:13203-13208) sits the icon over the input's own
+   top-left corner — that's a reliable, correctly-scoped mechanism (the
+   position:relative context is the label itself, not something that
+   drifts with a resizing grid); an earlier attempt to reimplement it as
+   a flex-flow sibling instead was based on a wrong diagnosis of the
+   original detachment bug and made things worse (icon collapsed to a
+   tiny dot, wrong size, wrong side) — reverted, no label/icon override
+   needed at all now.
+
+   The one thing that DOES need to stay in sync with the icon overlay:
+   input's own left padding. Native is asymmetric —
+   0.375rem 0.5rem 0.3755rem 1rem (dnd5e.css:13229-13237) — that
+   generous 1rem left side is what reserves room for the icon so it
+   doesn't sit on top of the digits. Keeping that same left value while
+   using the requested 5px on the other three sides, rather than the
+   flattened uniform 5px from before which removed the icon's reserved
+   space entirely. */
+.dnd5e2.sheet.actor.character .tab[data-tab="inventory"] .top .currency input {
+  max-width: 53px;
+  padding: 5px 5px 5px 1rem;
+  text-align: center;
+}
+
+/* Manage Currency button is DOM-first inside .currency (inventory.hbs),
+   ahead of PP — order:999 pushes it to visually render last (after
+   Copper) without touching DOM/source order, so PP→GP→EP→SP→CP keep
+   their existing relative order (all default order:0). */
+.dnd5e2.sheet.actor.character .tab[data-tab="inventory"] .top .currency .item-action[data-action="currency"] {
+  order: 999;
+}
+
+/* Tighten .top's own gap (native 1rem, halved to 0.5rem above) further so
+   currency sits closer against the encumbrance bar instead of floating
+   away from it. Applied in both Half AND fully-Collapsed (the collapser's
+   own pop-out view still renders this same Inventory tab) — same
+   treatment in both narrower states, not just Half. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="inventory"] .top,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="inventory"] .top {
+  gap: 1px;
+}
+
+/* flex:1 (Full-mode rule above) stretches .currency to fill ALL of .top's
+   remaining width — fine at Full width where that's still a reasonable
+   amount of room, but at Half/Collapsed width it left 3 wide, sparse-
+   looking grid columns with a lot of dead space around each small pill.
+   Switched to auto-sizing to its own content instead, so the grid hugs
+   the pills' actual width and the whole block sits flush left against
+   .encumbrance rather than stretched out. 2 columns (not 3) x 3 rows fits
+   the 5 currencies + Manage Currency button exactly (6 cells, last one is
+   the button) — max-content columns instead of 1fr for the same "hug the
+   content, don't stretch" reason as the outer flex change. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="inventory"] .top .currency,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="inventory"] .top .currency {
+  flex: 0 0 auto;
+  grid-template-columns: repeat(2, max-content);
+  gap: 1px;
+}
+
+/* Buffer (grid gap above, input's own padding here) trimmed to 1px per
+   side, height nudged up by 1px net (0.5px top+bottom) per request. Left
+   padding stays at 1rem regardless — reserved for the icon overlay (see
+   the Full-mode comment above), collapsing it would sit the icon directly
+   on top of the digits. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="inventory"] .top .currency input,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="inventory"] .top .currency input {
+  padding: 1.5px 1px 1.5px 1rem;
+}
+
+/* Half AND fully-Collapsed mode (relocateSearchAndAttunement, sheet-
+   inject.js, treats both the same way): .currency no longer stretches to
+   fill .top (fix above), which leaves a large empty area to its right —
+   reclaimed by moving the search bar and attunement box out of .middle
+   and into a new wrapper appended as a genuine THIRD flex child of .top,
+   after .currency.
+
+   Genuine flex children rather than position:absolute (a first attempt)
+   means the browser handles "don't overlap .currency" natively via
+   flex-shrink, for whatever .currency's actual rendered width turns out
+   to be — no guessing involved, and confirmed live: the position:absolute
+   version had to guess that width and got it wrong, visibly overlapping
+   the currency pills. The gap between them now comes for free from .top's
+   own gap (1px, above) too, instead of a separately-tuned offset.
+   .encumbrance/.currency are both protected from shrinking
+   (flex-shrink:0 — .currency's own flex:0 0 auto above already implies
+   it) so the new wrapper is the only one that gives up width under
+   pressure, right down to that 1px gap and no further. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="inventory"] .top .encumbrance,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="inventory"] .top .encumbrance {
+  flex-shrink: 0;
+}
+
+/* Requested buffer, added on top of whatever gap already exists (.top's
+   own gap in Half/Collapsed, above; Full mode's native 1rem/0.5rem .top
+   gap). .encumbrance never moves between modes (.top .encumbrance is the
+   same element/position in Full and Half/Collapsed alike), so one
+   unscoped rule covers both.
+   item-list-controls (the search bar) similarly stays findable by the
+   same selector regardless of which parent currently holds it —
+   .middle in Full mode (native), .awc-inventory-search-attunement in
+   Half/Collapsed (relocateSearchAndAttunement, sheet-inject.js) — so one
+   rule covers its left-side buffer in both modes too. Both sit on a
+   flex:1/flex-grow row (Full: .middle's item-list-controls, Half:
+   .awc-inventory-search-attunement itself), so the added margins are
+   absorbed by the search bar's own width shrinking — nothing else needs
+   to shift. In Full mode specifically, .encumbrance's added margin is
+   absorbed by .currency's own flex:1 instead (search sits on a separate
+   row there, not sharing width with .encumbrance at all) — same "search
+   absorbs it" outcome where they share a row (Half/Collapsed), and a
+   harmless independent nudge where they don't (Full). */
+.dnd5e2.sheet.actor.character .tab[data-tab="inventory"] .top .encumbrance {
+  margin-right: 2px;
+}
+
+.dnd5e2.sheet.actor.character .tab[data-tab="inventory"] item-list-controls {
+  margin-left: 2px;
+}
+
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="inventory"] .top .awc-inventory-search-attunement,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="inventory"] .top .awc-inventory-search-attunement {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* item-list-controls stretches to the wrapper's own (flex-grow:1) width
+   for free — flex-direction:column's native cross-axis align-items:
+   stretch, no explicit width needed — so it keeps extending right as the
+   window widens, independent of .encumbrance/.currency which hold their
+   own sizes (flex-shrink:0 above). .attunement gets its own align-self
+   override instead of inheriting that same stretch: kept at its native
+   auto/content width (own box, background/border/box-shadow all intact,
+   no size overrides here anymore) and just centered horizontally under
+   the now-wider search bar via align-self:center, rather than being
+   stretched full-width to match it. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="inventory"] .top .awc-inventory-search-attunement .attunement,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="inventory"] .top .awc-inventory-search-attunement .attunement {
+  align-self: center;
+}
+
+/* .middle's own row collapses to ~0 height now that both children have
+   been moved out of it entirely (a real DOM move, not just visually
+   hidden) — Weapons/Equipment (the next sibling down) shift up to close
+   the gap it used to reserve, automatically. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="inventory"] .middle,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="inventory"] .middle {
+  min-height: 0;
+}
+
+/* Space below the search bar — was the shared flex-column gap between
+   .inventory-element's children (dnd5e.css:9513-9515, 16px), now solely
+   governing .middle-to-.items-list spacing since .currency is no longer
+   one of those children. The space ABOVE the search bar (between .top
+   and .inventory-element, now siblings) comes from a different,
+   unverified outer gap — check live and add a second rule here if it's
+   not already tight. */
+.dnd5e2.sheet.actor.character .sheet-body .inventory-element {
+  gap: 1px;
+}
+
+/* Effects tab's search bar (<item-list-controls> inside .effects-element,
+   templates/shared/active-effects.hbs) sits directly above .items-list
+   the same way Inventory's search bar sits above its own .items-list —
+   same native gap mechanism and same character-sheet-specific override
+   (dnd5e.css:9519-9521, 16px), matched here to the Inventory value. */
+.dnd5e2.sheet.actor.character .sheet-body .effects-element {
+  gap: 1px;
+}
+
+/* Features and Spells tabs both reuse inventory.hbs (character-
+   features.hbs / creature-spells.hbs), each preceded by their own info
+   box as an immediate sibling — Features: section.classes.pills-lg
+   (actor-classes.hbs); Spells: section.top (the spellcasting Ability/
+   Attack/Spell DC card, creature-spells.hbs). Confirmed via live
+   DevTools inspection that the actual rendered class on the tab section
+   itself is just "tab active" with the tab identified by a data-tab
+   attribute (data-tab="features" / data-tab="spells") — NOT a
+   .features/.spells class as an earlier, wrong attempt here assumed
+   (that selector silently never matched anything). Using the verified
+   attribute selector now. Adjacent-sibling margin-top on .inventory-
+   element itself is a second, independent lever that only depends on
+   the confirmed DOM adjacency rather than on the tab's own class/gap
+   mechanism, so it still closes the gap even if that first rule turns
+   out not to be the real source either. 1px is the target either way —
+   some separation is still wanted, not a full 0. */
+.dnd5e2.sheet.actor.character .tab[data-tab="features"] {
+  gap: 1px;
+}
+
+.dnd5e2.sheet.actor.character .tab[data-tab="spells"] {
+  gap: 1px;
+}
+
+.dnd5e2.sheet.actor.character .classes.pills-lg + .inventory-element {
+  margin-top: 1px;
+}
+
+.dnd5e2.sheet.actor.character .tab[data-tab="spells"] > .top + .inventory-element {
+  margin-top: 1px;
+}
+
+/* ================================================================
+   INVENTORY TAB — ITEM ROW DENSITY
+   Weapons/Equipment/Consumables/Tools/Loot/etc. all share this one
+   generic .items-section .item structure (templates\inventory\
+   inventory.hbs, looped once per category) — no per-category CSS
+   exists, so one rule covers all of them. NOT the same DOM tree as the
+   Tools *proficiency* list on the Details tab (.tools > ul > li,
+   already overridden elsewhere in this file) — this targets the
+   Inventory tab's Tools *item category* instead, same shared class as
+   every other category.
+
+   .item-row uses align-items:stretch (dnd5e.css:12710-12714), so the
+   32px .item-image icon (dnd5e.css:12801-12810) sets each row's height
+   floor, not padding — an earlier pass also shrank the icon itself to
+   24px to tighten rows further, but that crops/distorts the native item
+   artwork (icons aren't drawn to look right below their native 32px),
+   so the icon is back to its native size here. Row height still ends up
+   shorter than native regardless, since the padding cut below is real —
+   just not as tight as forcing the icon down too. */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-name:not(h3) {
+  padding-block: 0.15rem;
+}
+
+/* Spells tab column spacing — .item-row has no gap at all; these fixed
+   column widths (native dnd5e.css:12844/12943/13010) are themselves
+   what creates the visual breathing room around narrow content
+   (roll/uses/formula values are far narrower than their box). Halved. */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-roll,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-roll {
+  width: 20px;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-uses,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-uses,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-charges,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-charges {
+  width: 35px;
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-formula,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-formula {
+  width: 40px;
+}
+
+/* Title/School/Time/Range — native widths dnd5e.css:12937-12943 (School/
+   Time, 40px), 12991-12993 (Range, 50px). Title (.item-name) has no
+   fixed width (flex:1, grows to fill remaining space) — its own buffer
+   is native padding: 0.25rem (dnd5e.css:12724-12727), halved here
+   instead. Right side halved AGAIN (0.0625rem) — that's the actual
+   Name-to-Time gap (.item-row has no gap of its own, .item-name's flex:1
+   right edge sits directly against .item-time's left edge otherwise);
+   left stays as-is, that side borders the row's own icon, not Time. */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-name:not(h3),
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-name:not(h3) {
+  padding-inline: 0.125rem 0;
+}
+
+/* Long names wrapping onto a second line only ever showed up in
+   whichever section happened to have a long enough name to need it (e.g.
+   "Purify Food and Drink") — every section already shares the exact same
+   .awc-column width (grid-template-columns: 1fr 1fr, above), so this was
+   never actually inconsistent between sections, just content-length-
+   dependent. What COULD make wrapping behave unreliably regardless of
+   section: .item-name is a flex:1 child with no min-width override —
+   flex items default to min-width:auto, which can refuse to shrink below
+   the name's own unbroken content width and overflow the row sideways
+   instead of wrapping. min-width:0 here removes that floor so a too-long
+   name always wraps rather than sometimes overflowing.
+
+   overflow-wrap/word-break are explicitly NORMAL (not break-word) —
+   confirmed live that break-word was breaking mid-WORD ("Repose" ->
+   "Repos"/"e") once the column got narrow enough, not just wrapping at
+   the next space like a normal line break would. Whole-word wrapping
+   only now; the case where even one whole word doesn't fit is handled
+   below instead (hide the name outright, rather than break it apart). */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-name:not(h3),
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-name:not(h3) {
+  min-width: 0;
+}
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-name .title,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-name .title {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* Below whole-word wrapping's own breaking point (a card narrow enough
+   that even single words no longer fit), hide the name text outright
+   instead — .items-section needs its own NAMED container here (own
+   name, not left unnamed, for the exact same reason .items-list gets
+   one below: an unnamed query would resolve against whichever
+   container-type ancestor is nearest, and there are now two on this
+   page) since .items-list's native container-type (dnd5e.css) measures
+   the WHOLE list's width, not this one reflowed .awc-column's actual
+   (narrower) share of it. ~230px is reasoned from the other columns' own
+   fixed widths (Time 27 + Range 30 + Target 40 + Controls ~70 ≈ 167px,
+   plus the item icon and some buffer) rather than measured — tune live.
+   Item icon itself stays visible (.item-name .name is just the
+   title/subtitle text block), so the row isn't left completely blank. */
+.dnd5e2.sheet.actor.character .sheet-body .items-section {
+  container-type: inline-size;
+  container-name: awc-items-section;
+}
+@container awc-items-section (max-width: 230px) {
+  .dnd5e2.sheet.actor.character .sheet-body .items-section .item-name .name {
+    display: none;
+  }
+}
+
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-school,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-school {
+  width: 20px;
+}
+
+/* .item-school is hidden entirely (SPELL SCHOOL ICON section above), so
+   only .item-time's own width actually matters for layout now — bumped
+   1px past school's to open a small gap after it (.item-row has no gap
+   of its own, same reasoning as every other column here). */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-time,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-time {
+  width: 27px;
+}
+
+/* Range: pushed down to 12.5px earlier to close the Range/Target gap, but
+   confirmed live that was too tight — actual range text ("10 ft", "120
+   ft") was getting buried/cramped, worse once the sidebar goes fully
+   Collapsed (same narrow reflowed column, same rule). Back up to 30px —
+   still well under native's 50px, but with real room on both sides of
+   the text again. */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-range,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-range {
+  width: 30px;
+}
+
+/* Target/Controls gap: .item-target's icon overlay (TARGET COLUMN SHAPE
+   ICONS section above) is deliberately decoupled from its container's
+   own size (absolutely positioned, allowed to overflow) — so .item-
+   target's native 80px width was never actually needed for the icon
+   itself, it was just empty box around it. Halved to close that up,
+   same reasoning as every other column here. Target only exists on the
+   Spells tab, so this doesn't need its own tab scope. */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-target,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-target {
+  width: 40px;
+}
+
+/* Time/Range/Target/Formula column-header labels ("TIME"/"RANGE"/
+   "TARGET"/"FORMULA") hidden — visibility:hidden rather than display:
+   none so each header cell KEEPS its column's own width/position (same
+   fixed-width rules as the data rows below it, dnd5e's own convention of
+   sharing .item-X classes between .items-header and .item) — hiding via
+   display:none would collapse that reserved space and misalign the
+   header row against the data rows under it. Only these four: the icons
+   (school-behind-Time, shape-behind-Target) plus the narrower columns
+   already make them self-explanatory without a text label; Name/Roll
+   headers are untouched. */
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-time,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-range,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-target,
+.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-formula {
+  visibility: hidden;
+}
+
+/* ================================================================
+   TWO-COLUMN CATEGORY REFLOW (Inventory/Features/Spells/Effects)
+   scripts/column-reflow.js's reflowItemsList() always eagerly builds
+   the .awc-columns > .awc-column(x2) wrapper structure around each
+   tab's .items-section cards, every render, regardless of tab
+   visibility or width — it has no way to reliably measure a currently-
+   hidden tab (Foundry keeps every tab's DOM present at once). CSS
+   decides the ACTUAL visual column count instead, via .items-list's own
+   native container-type:inline-size (dnd5e.css:~12677-12682) — already
+   present, no addition needed there.
+
+   Base state (narrow container): both wrapper levels are display:
+   contents, fully transparent to layout — sections render exactly as
+   if they were still flat children of .items-list, stacked in its own
+   native flex-column. Note the STACKING ORDER in this state is
+   "largest category first, then bin-packed order" (from the JS pack),
+   not necessarily dnd5e's own original category order — a deliberate,
+   low-risk tradeoff (category cards have no strong ordinal
+   relationship to begin with) rather than adding back a width-
+   measurement dependency to preserve original order only when narrow. */
+.dnd5e2.sheet.actor.character .sheet-body .awc-columns,
+.dnd5e2.sheet.actor.character .sheet-body .awc-column {
+  display: contents;
+}
+
+/* Named (rather than relying on .items-list being the nearest
+   container, which it won't always be once .items-section gets its own
+   container-type further below) so the @container query right after
+   this can target it explicitly. */
+.dnd5e2.sheet.actor.character .sheet-body .items-list {
+  container-name: awc-items-list;
+}
+
+/* Named explicitly for the reason above: unnamed @container resolves
+   against the NEAREST ancestor with a container-type, and .items-section
+   (below, for the separate name-hiding rule further down) now has its
+   own — without a name here, this block would silently start resolving
+   against whichever single .items-section card happens to contain the
+   matched element instead of the whole .items-list. That's a real
+   behavior change: price/weight/roll are meant to hide as soon as the
+   2-column reflow itself activates, not conditionally based on one
+   card's own width within it.
+
+   Breakpoint is a first-pass guess — tune live against how wide
+   .items-list actually gets once the sidebar is collapsed. */
+@container awc-items-list (min-width: 500px) {
+  .dnd5e2.sheet.actor.character .sheet-body .awc-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 1rem;
+    align-items: start;
+  }
+
+  .dnd5e2.sheet.actor.character .sheet-body .awc-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Mitigates a real native limitation (not fully fixed, flagged as
+     tune-live): InventoryElement._onResize (dnd5e.mjs:~64779) decides
+     which item-row columns to hide based on the WHOLE <dnd5e-inventory>
+     element's measured width, not each individual (now half-width)
+     .items-section — so it won't hide columns that no longer
+     comfortably fit once sections sit at half width. Hiding the
+     lowest-priority columns here directly, independent of that native
+     JS-driven mechanism, rather than trying to patch a
+     ResizeObserver-driven system. Class names are dnd5e's own
+     convention (id-based, e.g. price→.item-price) — verify live and
+     adjust which columns get hidden if these aren't quite right. */
+  .dnd5e2.sheet.actor.character .sheet-body .awc-column .item-price,
+  .dnd5e2.sheet.actor.character .sheet-body .awc-column .item-weight {
+    display: none;
+  }
+
+  /* Same native limitation, Spells tab's own columns (Time/Range/Target/
+     Roll) — confirmed live: with the mitigation above scoped only to
+     Inventory's Price/Weight, Spells sections were left entirely to
+     native's own hidden-width mechanism, which visibly gave inconsistent
+     results between sections sharing the same narrow column width (one
+     level's rows showing cramped/overlapping text, another's cleanly
+     fine) rather than reliably hiding anything itself. Roll is the
+     lowest-value of the four here (usually just a dash for non-attack
+     spells) — hidden first, same reasoning as Price/Weight above. */
+  .dnd5e2.sheet.actor.character .sheet-body .tab[data-tab="spells"] .awc-column .item-roll {
+    display: none;
+  }
+}
+
+/* ================================================================
+   EFFECTS TAB — CONDITIONS, HALF/COLLAPSED ONLY
+   sheet-inject.js's relocateConditionsIntoEffectsList moves the
+   Conditions card into the same pool column-reflow.js packs, pinned to
+   column 2 — but ONLY when the sidebar is actually Half or Collapsed;
+   Full mode is untouched by design (zero change there), so every rule
+   here is scoped the same way, not left unscoped like most of this
+   file's other column tweaks.
+   ================================================================ */
+
+/* The Conditions card's original wrapper <section class="items-list">
+   (active-effects.hbs) is empty exactly when relocateConditionsInto
+   EffectsList has moved its card out — i.e. exactly when Half/Collapsed
+   is active — so this is keyed off the SAME state classes the JS itself
+   checks, rather than a separate JS-set marker class that could drift
+   out of sync with what actually happened. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="effects"] .items-list:not(.effects-list),
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="effects"] .items-list:not(.effects-list) {
+  display: none;
+}
+
+/* Condition pills: native .conditions-list is already display:grid;
+   grid-template-columns:repeat(auto-fit, minmax(165px, 1fr))
+   (dnd5e.css:5309-5314) — at column-2 reflow width that only ever fits
+   one 165px+ column, well short of the "two per line" asked for.
+   Explicit 2-column grid instead of a smaller auto-fit minmax, so it's
+   guaranteed exactly two regardless of the column's exact pixel width.
+   Padding/gap also trimmed — native .condition has a lot of room
+   (0.5625rem 0.75rem) built for a single wide column, not a fit-two
+   layout. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="effects"] .conditions-list,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="effects"] .conditions-list {
+  grid-template-columns: repeat(2, 1fr);
+}
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="effects"] .conditions-list .condition,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="effects"] .conditions-list .condition {
+  padding: 0.25rem 0.375rem;
+  gap: 0.25rem;
+}
+
+/* Source column (.effect-source, dnd5e.css:13034-13042 — width:150px,
+   tuned for the full-width sheet). At the narrow reflowed column width,
+   confirmed live this wasn't actually a vertical-centering problem (an
+   earlier attempt at just reinforcing align-items:center only partially
+   helped) — the text was overflowing its own 150px-wide box sideways
+   into the neighboring .item-name column, since 150px alone can already
+   exceed a whole half-column's width here. Narrowed to 55px (native
+   .item-detail already centers both axes, dnd5e.css:12776-12784 — no
+   need to re-declare that), with explicit wrapping so a long source name
+   ("Chest Armor Fur - Pelt") breaks onto multiple lines within its own
+   narrower box instead of spilling out of it. */
+.dnd5e2.sheet.actor.character.awc-sidebar-half .tab[data-tab="effects"] .effect-source,
+.dnd5e2.sheet.actor.character.sidebar-collapsed .tab[data-tab="effects"] .effect-source {
+  width: 55px;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* Tools relocated under Saves (scripts/sheet-inject.js's
+   relocateToolsUnderSaves) is styled identically to its native .left
+   position — no extra override needed, .right's own flex-column gap
+   (dnd5e.css:9296-9300) already spaces it correctly from whatever now
+   precedes/follows it. Left here as a marker in case that assumption
+   doesn't hold up once seen live — the selector to add a follow-up rule
+   to would be .dnd5e2.sheet.actor.character .col-2 .right filigree-box.tools. */

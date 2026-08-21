@@ -123,10 +123,6 @@ async function migrateWorldConfig() {
   const playerOwnedOnly = readOldWorldSetting("playerOwnedOnly");
   if (playerOwnedOnly !== undefined) { await game.settings.set(MODULE_ID, "dollPlayerOwnedOnly", playerOwnedOnly); changed = true; }
 
-  // `autoOpen` on the old module is client-scoped, so it isn't present in
-  // world storage at all — there's nothing to migrate per-client from here.
-  // Users can re-toggle AWC's own dollAutoOpen from the settings menu.
-
   return changed;
 }
 
@@ -141,7 +137,6 @@ async function migrateActorFlags() {
     const update = {};
     if (old.img) update[`flags.${FLAG_NS}.dollImg`] = old.img;
     if (old.objectFit) update[`flags.${FLAG_NS}.dollObjectFit`] = old.objectFit;
-    if (old.autoOpen) update[`flags.${FLAG_NS}.dollAutoOpen`] = old.autoOpen;
 
     if (Object.keys(update).length) {
       await actor.update(update, { render: false });
