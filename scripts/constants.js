@@ -7,8 +7,8 @@ export const MODULE_ID = "armor-weight-class";
 export const FLAG_NS   = MODULE_ID; // namespace for all actor/item flags
 
 // ─── Armor Brackets ──────────────────────────────────────────────────────────
-// Thresholds are expressed as a fraction (0–1) of carry capacity.
-// They are DEFAULTS; the GM can override them in settings.
+// Thresholds are a fraction (0-1) of carry capacity. Defaults — GM-editable
+// in settings.
 
 export const DEFAULT_BRACKETS = {
   unarmored: { min: 0,    max: 0.25, label: "Unarmored", cssClass: "awc-unarmored" },
@@ -19,22 +19,13 @@ export const DEFAULT_BRACKETS = {
 };
 
 // ─── Equipment Slots ─────────────────────────────────────────────────────────
-// Single source of truth for every AWC-managed equipment sub-type: the
-// Equipment Type dropdown groups (hooks.js), the exclusivity/layering logic
-// (slots.js), and the doll's slot labels/icons (scripts/apps/paper-doll-app.js)
-// all read from this one table — it replaces the old, separately-maintained
-// _AWC_EQUIP_GROUPS that used to live only in hooks.js.
+// Single source of truth for every slot: the Equipment Type dropdown
+// (hooks.js), exclusivity logic (slots.js), and doll labels/icons
+// (apps/paper-doll-app.js) all read from this table.
 //
-// By default every sub-type is its own independent, exclusive (one-item) slot.
-// Armor pieces and the clothing worn underneath them are NOT exclusive with
-// each other (a gauntlet layers over a glove, a breastplate over a shirt, a
-// helmet over padding, etc.) — only pairs listed in DEFAULT_SLOT_CONFLICTS
-// below actually conflict.
-//
-// `ring` is flagged `paired: true` — it is NOT resolved through the normal
-// one-item-per-slot logic in slots.js. It's handled by the Main/Secondary
-// paired-slot subsystem in paired-slots.js instead (same mechanism as weapon
-// hand-slots), since the doll needs 2 simultaneous ring slots.
+// Every sub-type is its own exclusive slot by default — only pairs in
+// DEFAULT_SLOT_CONFLICTS below actually conflict. `ring` is paired: true,
+// handled separately by paired-slots.js's Main/Secondary system.
 
 export const SLOT_TYPES = {
   // Armor
@@ -71,13 +62,10 @@ export const SLOT_KEYS = Object.keys(SLOT_TYPES);
 export const SLOT_LEGACY_MAP = { chest: "breast", gloves: "gauntlet" };
 
 // ─── Slot Conflicts ───────────────────────────────────────────────────────────
-// Explicit conflicting PAIRS, not symmetric groups — the head region is
-// asymmetric (a helmet layers over padding but conflicts with a crown or hat),
-// which a flat "these slots all conflict with each other" group can't express.
-// Equipping either member of a listed pair auto-unequips the other.
-//
-// This is the DEFAULT value for the `slotConflicts` world setting — GM-editable
-// later via the settings menu's Equipment Rules tab, not a hardcoded rule.
+// Explicit conflicting pairs, not symmetric groups — a helmet layers over
+// padding fine but conflicts with a crown or hat. Equipping either member of
+// a pair auto-unequips the other. Default for the GM-editable slotConflicts
+// world setting.
 
 export const DEFAULT_SLOT_CONFLICTS = [
   ["padding", "crown"],
@@ -89,10 +77,9 @@ export const DEFAULT_SLOT_CONFLICTS = [
 ];
 
 // ─── Per-Item Override Markers ────────────────────────────────────────────────
-// Applied to a specific item via a GM-authored Active Effect targeting
-// `flags.armor-weight-class.<key>` (change mode OVERRIDE, value `true`).
-// Read via scripts/slots.js (COVERS_FACE / BYPASS_FACE_COVER) and
-// scripts/paired-slots.js (IGNORES_HAND_SLOT).
+// Set via a GM-authored Active Effect (OVERRIDE, value true) targeting
+// flags.armor-weight-class.<key>. Read by slots.js (COVERS_FACE/
+// BYPASS_FACE_COVER) and paired-slots.js (IGNORES_HAND_SLOT).
 
 export const ITEM_MARKERS = {
   COVERS_FACE:       "coversFace",       // on a Helmet: blocks the Mask slot
@@ -102,25 +89,16 @@ export const ITEM_MARKERS = {
 
 // ─── Paired Slots (hand-slots & ring-slots) ───────────────────────────────────
 // Two positions each, auto-filled Main-then-Secondary, drag-to-swap between
-// them. See scripts/paired-slots.js.
+// them. See paired-slots.js.
 
 export const HAND_SLOT_POSITIONS = ["main", "secondary"];
 export const RING_SLOT_POSITIONS = ["main", "secondary"];
 
-// dnd5e `system.properties` Set member marking a weapon as two-handed.
-// Verified against the locally installed dnd5e system (DND5E.itemProperties.two
-// = "Two-Handed"); this key has been stable since the 3.0 item-data-model
-// overhaul, but spot-check against whichever dnd5e version is actually running
-// if hand-slot pairing behaves oddly on an older 3.x install.
+// dnd5e's own system.properties key for a two-handed weapon.
 export const WEAPON_TWO_HANDED_PROPERTY = "two";
 
-// dnd5e `system.properties` Set member marking a weapon as Light (eligible
-// for two-weapon fighting). Verified directly against the installed
-// dnd5e.mjs source (Weapon5e#attackModes: `this.properties.has("lgt")`),
-// alongside that same getter's use of the system's own
-// `flags.dnd5e.enhancedDualWielding` character flag — the mechanism a
-// Dual Wielder-style feat grants via an Active Effect — as the melee-only
-// exemption from needing Light. See paired-slots.js's canTwoWeaponFight().
+// dnd5e's own system.properties key for a Light weapon (eligible for
+// two-weapon fighting). See paired-slots.js's canTwoWeaponFight().
 export const WEAPON_LIGHT_PROPERTY = "lgt";
 
 // ─── Bracket Encumbrance Effects ─────────────────────────────────────────────

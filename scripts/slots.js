@@ -1,22 +1,9 @@
 /**
  * slots.js
- * Equipment slot management.
- *
- * - Every AWC-managed equipment sub-type (see constants.js SLOT_TYPES) is its
- *   own independent, exclusive slot — an actor can equip exactly one item of
- *   each sub-type at a time.
- * - By default, sub-types don't conflict with EACH OTHER: a gauntlet and a
- *   glove can both be equipped simultaneously (armor layered over clothing).
- *   Explicit conflicting pairs are read from the `slotConflicts` world setting
- *   (defaults to DEFAULT_SLOT_CONFLICTS) — e.g. a Helmet conflicts with a
- *   Crown or Hat, but not with Helm Padding.
- * - `ring` is excluded from this file's handling entirely — it's a paired
- *   slot (Main Ring / Secondary Ring) managed by paired-slots.js.
- * - Equipping an item into a conflicting slot auto-unequips the current
- *   occupant(s). Slot type is resolved primarily from the item's native
- *   Equipment Type field (system.type.value); a legacy AWC flag is checked
- *   first for backwards-compatibility with items tagged before the dropdown
- *   existed.
+ * Equipment slot management — each SLOT_TYPES sub-type (constants.js) is its
+ * own exclusive slot, one item at a time. Sub-types don't conflict with each
+ * other by default (armor layers over clothing fine); only pairs in the
+ * slotConflicts setting do. `ring` is excluded — paired-slots.js owns it.
  */
 
 import { FLAG_NS, MODULE_ID, SLOT_KEYS, SLOT_TYPES, SLOT_LEGACY_MAP, DEFAULT_SLOT_CONFLICTS, ITEM_MARKERS } from "./constants.js";
@@ -24,31 +11,9 @@ import { FLAG_NS, MODULE_ID, SLOT_KEYS, SLOT_TYPES, SLOT_LEGACY_MAP, DEFAULT_SLO
 // ─── Slot Queries ─────────────────────────────────────────────────────────
 
 /**
- * Return the item currently equipped in `slotType` for `actor`, or null.
- * Always returns null for `ring` — paired slots aren't tracked here (see
- * paired-slots.js).
- */
-export function getSlotItem(actor, slotType) {
-  if (SLOT_TYPES[slotType]?.paired) return null;
-  for (const item of actor.items) {
-    if (!item.system?.equipped) continue;
-    const slot = getItemSlot(item);
-    if (slot === slotType) return item;
-  }
-  return null;
-}
-
-/**
- * Return the canonical slotType string for an item, or null.
- *
- * Resolution order:
- *   1. AWC flag (legacy — set by the old Slot Type dropdown)
- *   2. Native equipment type field (system.type.value) — the Equipment Type
- *      dropdown, which lists every SLOT_TYPES sub-type across Armor/
- *      Clothing/Jewelry.
- *
- * Legacy flag names ("chest", "gloves") are mapped to their current
- * equivalents so items tagged before the rename continue to work.
+ * Return the canonical slotType string for an item, or null. Checks the
+ * legacy AWC flag first (old names remapped via SLOT_LEGACY_MAP), then the
+ * native Equipment Type field.
  */
 export function getItemSlot(item) {
   const raw = item.getFlag?.(FLAG_NS, "slotType") ?? item.system?.slotType ?? null;
@@ -107,18 +72,11 @@ export function getConflictingSlotKeys(slotType) {
 
 /**
  * True if `item` carries the given AWC marker (coversFace, bypassFaceCover,
- * ignoresHandSlot). Two independent mechanisms, checked in order:
- *   1. The native dnd5e `system.properties` Set — the checkbox in the
- *      Equipment Properties section registered by the companion
- *      a-knights-dream-properties module (armorPropMJS.mjs), using the same
- *      key names as ITEM_MARKERS's values so they line up 1:1.
- *   2. Legacy fallback: a GM-authored Active Effect on the item targeting
- *      flags.armor-weight-class.<markerKey> (Custom change, mode Override,
- *      value true) — the original, clunkier mechanism this markers system
- *      shipped with. Mirrors the pattern ac.js's getMiscAcBonuses() uses for
- *      actor-level Active Effect changes, scoped to a single item instead.
- * Kept working side by side so GMs who already set markers via Active
- * Effects don't need to redo anything after the checkbox was added.
+ * ignoresHandSlot). Checks the Equipment Properties checkbox (added by the
+ * companion a-knights-dream-properties module) first, then falls back to
+ * the older mechanism — a GM-authored Active Effect targeting
+ * flags.armor-weight-class.<markerKey> — so existing Effect-based markers
+ * keep working.
  */
 export function itemHasMarker(item, markerKey) {
   const props = item?.system?.properties;
@@ -142,17 +100,11 @@ export function itemHasMarker(item, markerKey) {
 // ─── Equip Validation & Auto-Unequip ─────────────────────────────────────
 
 /**
- * Called after an item's `system.equipped` has already been set to true
- * (from the updateItem hook — see hooks.js for why this can't safely run
- * in preUpdateItem, where async handlers aren't awaited before the change
- * commits).
- *
- * Finds every other currently-equipped item that conflicts with `item` —
- * an exact slot match, a pair listed in slotConflicts, or the Helmet/Mask
- * coversFace interaction — and unequips it. Never touches paired slots
- * (rings, hand-slots); those are resolved by paired-slots.js.
- *
- * Returns the list of items that were unequipped, for notification/reporting.
+ * Called after an item's system.equipped is already true (from the
+ * updateItem hook — see hooks.js). Unequips every other equipped item that
+ * conflicts with `item` (exact slot match, a slotConflicts pair, or the
+ * Helmet/Mask coversFace interaction) and returns what got unequipped.
+ * Never touches paired slots (rings, hand-slots) — paired-slots.js owns those.
  */
 export async function resolveSlotConflicts(actor, item) {
   const slotType = getItemSlot(item);

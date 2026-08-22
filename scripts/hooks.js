@@ -15,12 +15,10 @@ import { runMigration } from "./migration.js";
 const LOG = `${MODULE_ID} |`;
 
 /**
- * Foundry v13+ feature-detect. All ApplicationV2 UI (the doll, its per-actor
- * config popup, the Configure Paper Doll menu) is gated behind this — v12
- * users keep every other AWC feature (AC/capacity math, sheet injection,
- * slot exclusivity, migration) unmodified, they just don't get the visual
- * doll (and the settings that only affect it stay hidden, since config:true
- * fields render regardless of this gate — see settings.js).
+ * Foundry v13+ feature-detect. All ApplicationV2 UI (the doll, its config
+ * popup, the Configure Paper Doll menu) is gated behind this — v12 users
+ * keep every other AWC feature unmodified, they just don't get the visual
+ * doll.
  */
 function _hasApplicationV2() {
   return !!(foundry.applications?.api?.ApplicationV2 && foundry.applications?.api?.HandlebarsApplicationMixin);
@@ -144,11 +142,10 @@ function _patchArmorClass() {
 // ── Sidebar two-step collapse ─────────────────────────────────────────────────
 
 /**
- * Whether the embedded doll (and therefore the half-collapse tier — nothing
- * doll-related to preserve at half width otherwise) applies to this actor.
- * Mirrors doll-embed.js's own gate exactly (dollPlayerOwnedOnly, TRUE =
- * restrict to player-owned actors only — negated here since this asks
- * "does it apply" rather than "should it be skipped").
+ * Whether the embedded doll (and the half-collapse tier that depends on
+ * it) applies to this actor. Mirrors doll-embed.js's own gate exactly —
+ * negated here since this asks "does it apply" rather than "should it be
+ * skipped".
  */
 function _dollAppliesTo(actor) {
   return actor?.hasPlayerOwner || !game.settings.get(MODULE_ID, "dollPlayerOwnedOnly");
@@ -172,12 +169,10 @@ async function _openSidebarPopoutFromCollapser(app) {
 /**
  * Patches _toggleSidebar (dnd5e.mjs, shared actor-sheet base class) to cycle
  * Full → Half → Collapsed instead of the native binary Full ↔ Collapsed
- * toggle. Same find-class/guard-flag/save-original/wrap shape as
- * _patchArmorClass above, but walking CONFIG.Actor.sheetClasses (like
- * _registerV14SheetHooks does) rather than a document class, since this is a
- * sheet-side method. Only intercepts plain (no-argument) calls — an explicit
- * force-call (e.g. dnd5e restoring persisted collapse state on render) passes
- * straight through to the original, unmodified.
+ * toggle. Same find-class/guard-flag/wrap shape as _patchArmorClass above,
+ * but walks CONFIG.Actor.sheetClasses since this is a sheet-side method.
+ * Only intercepts plain (no-argument) calls — an explicit force-call (e.g.
+ * dnd5e restoring persisted collapse state) passes straight through.
  */
 function _patchSidebarToggle() {
   if (!_hasApplicationV2()) return;
@@ -257,10 +252,9 @@ function _patchSidebarToggle() {
 }
 
 // ── Equipment type definitions ────────────────────────────────────────────────
-// Derived from constants.js's SLOT_TYPES (the single source of truth for every
-// AWC-managed sub-type) — no longer a separately hand-maintained list, so this
-// can't drift out of sync with the slot-exclusivity logic in slots.js the way
-// the old standalone _AWC_EQUIP_GROUPS/SLOT_TYPES pair could.
+// Derived from constants.js's SLOT_TYPES (the single source of truth for
+// every AWC-managed sub-type), so this can't drift out of sync with the
+// slot-exclusivity logic in slots.js.
 
 function _buildEquipGroups() {
   const groups = {};
@@ -426,11 +420,11 @@ let _warnedPaperDollCoexistence = false;
 
 /**
  * Inserts the "open Paper Doll" header icon into a rendered actor-sheet
- * window, via direct DOM injection into the existing render hook — the same
- * proven mechanism sheet-inject.js already uses for the capacity bar, rather
- * than a speculative `getHeaderControls<Name>` hook name (the original
- * fvtt-paper-doll-ui module relied on exactly such a hook — "getHeaderControlsActorSheetV2"
- * — that doesn't fire for this installation's actual sheet class name).
+ * window via direct DOM injection into the render hook — the same
+ * mechanism sheet-inject.js uses for the calc bar, rather than a
+ * speculative `getHeaderControls<Name>` hook name (the original
+ * fvtt-paper-doll-ui module relied on one that doesn't fire for this
+ * installation's actual sheet class name).
  */
 function _injectDollHeaderButton(app, el, actor) {
   if (!_hasApplicationV2()) return;
@@ -479,13 +473,11 @@ function _injectDollHeaderButton(app, el, actor) {
   else header.appendChild(btn);
 }
 
-// Cached after the first successful dynamic import — dynamic import() of an
-// already-loaded specifier still costs a microtask hop through its own
-// promise machinery every time it's called fresh; calling the cached
-// export directly on every subsequent render skips that, which matters
-// here since doll-embed.js's own embedPaperDoll now has a synchronous fast
-// path (its per-actor HTML cache) that this indirection would otherwise
-// sit in front of on every single call.
+// Cached after the first successful dynamic import — a dynamic import()
+// of an already-loaded specifier still costs a microtask hop every call,
+// which matters here since embedPaperDoll has its own synchronous fast
+// path (a per-actor HTML cache) that this indirection would otherwise sit
+// in front of.
 let _dollEmbedModule = null;
 
 /**
@@ -521,16 +513,11 @@ function _registerV14SheetHooks() {
     Hooks.on(`render${name}`, (app, html, _data) => {
       const actor = app.actor ?? app.document;
       if (actor?.type !== "character") return;
-      // The prototype-chain walk below registers hooks for generic ancestor
-      // classes too (whatever base the actor sheet and, e.g., a Rest dialog
-      // both ultimately share — Foundry fires render<ClassName> for every
-      // class up an app's OWN chain, so both trigger the same hook name).
-      // actor.type alone doesn't discriminate them apart, since a Rest
-      // dialog's .actor IS the same character being rested — confirmed live
-      // via DevTools: AWC's capacity bar was rendering inside a Rest
-      // dialog's .window-content. actor.sheet === app confirms this app
-      // instance is actually the actor's registered sheet, not some other
-      // actor-adjacent dialog.
+      // The prototype-chain walk below also registers hooks for generic
+      // ancestor classes — Foundry fires render<ClassName> for every class
+      // up an app's chain, so a Rest dialog sharing the same actor triggers
+      // the same hook name (confirmed live: AWC's calc bar was rendering
+      // inside a Rest dialog). actor.sheet === app filters that dialog out.
       if (actor.sheet !== app) return;
       injectCharacterSheetUI(app, html);
       const el = html instanceof HTMLElement ? html : html?.[0];
@@ -640,13 +627,11 @@ Hooks.on("updateItem", async (item, changes, _options, _userId) => {
   const beingEquipped =
     changes?.system?.equipped === true || changes?.["system.equipped"] === true;
   // Armor/Clothing/Jewelry conflict resolution (SLOT_CONFLICTS pairs +
-  // Helmet/Mask coversFace) — weapons, shields, and rings are handled by
-  // their own updateItem registration in paired-slots.js, since they use a
-  // different (paired-slot) resolution model. resolveSlotConflicts() itself
-  // is a no-op for anything it doesn't recognise (a paired slot, or an item
-  // with no resolvable AWC slot at all), so calling it unconditionally here
-  // is safe and avoids re-duplicating the "which subsystem owns this item"
-  // check that paired-slots.js's own updateItem handler already makes.
+  // Helmet/Mask coversFace) — weapons, shields, and rings go through their
+  // own updateItem registration in paired-slots.js instead (a different,
+  // paired-slot resolution model). resolveSlotConflicts() no-ops for
+  // anything it doesn't recognise, so calling it unconditionally here is
+  // safe.
   if (beingEquipped) {
     await resolveSlotConflicts(actor, item);
   }
@@ -655,11 +640,10 @@ Hooks.on("updateItem", async (item, changes, _options, _userId) => {
   requestAnimationFrame(() => _refreshActorSheet(actor));
 });
 
-// AWC's Movement pills-group reads flags.armor-weight-class.movementDisplay,
-// an AWC-owned value written only by AWCMovementDisplayConfig's Save action
-// (see resolveMovementDisplay's docstring in sheet-inject.js) — this keeps
-// that display refreshed the instant the flag itself changes, same pattern
-// as the equip/unequip refresh above.
+// AWC's Movement pills-group reads flags.armor-weight-class.movementDisplay
+// (see resolveMovementDisplay in sheet-inject.js) — this refreshes that
+// display the instant the flag changes, same pattern as the equip/unequip
+// refresh above.
 Hooks.on("updateActor", (actor, changes, _options, _userId) => {
   if (actor.type !== "character") return;
   if (!foundry.utils.hasProperty(changes, `flags.${FLAG_NS}.movementDisplay`)) return;

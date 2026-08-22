@@ -23,12 +23,10 @@ function buildColumnEntry(layout, key) {
 
 /**
  * Config mode shows all 4 hand positions unconditionally (Melee/Ranged ×
- * Main/Secondary), unlike the live doll where getHandSlotState() hides
- * whichever positions no free hand could reach — there's no actor/equip
- * state here, only "every possible slot needs an assignable image". Render
- * order matches buildHandGroup() in paper-doll-app.js: Main in the doll's
- * outer corner, Secondary toward the center — reversed for ranged since
- * that's the doll's rightmost group.
+ * Main/Secondary) — no actor/equip state here to hide any, unlike the live
+ * doll's getHandSlotState(). Render order matches buildHandGroup() in
+ * paper-doll-app.js: Main in the doll's outer corner, Secondary toward the
+ * center, reversed for ranged.
  */
 function buildConfigHandGroup(layout, side) {
   const emptyImg = resolveHandEmptyImg(layout, side);

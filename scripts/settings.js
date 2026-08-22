@@ -99,6 +99,17 @@ export function registerSettings() {
     onChange: () => refreshAllSheets(),
   });
 
+  // ── Hide doll-equipped items from the Inventory list ─────────────────────
+  game.settings.register(MODULE_ID, "hideEquippedFromInventory", {
+    name: "AWC.Settings.HideEquippedFromInventory.Name",
+    hint: "AWC.Settings.HideEquippedFromInventory.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => refreshAllSheets(),
+  });
+
   // ── Slot conflict pairs ────────────────────────────────────────────────────
   // The real array logic reads (slots.js). Always registered (config:false,
   // a plain Array type — safe on any client); its GM-facing JSON editor is a
@@ -183,27 +194,18 @@ export function registerSettings() {
 }
 
 /**
- * Settings that render a custom widget via `type: <DataField instance>` +
- * an `input:` function (Foundry's settings form calls `input(field, config)`
- * and uses whatever HTMLElement it returns in place of the field's default
- * rendering — see client/applications/forms/fields.mjs). That capability
- * isn't guaranteed on a v12 client, so — like the doll UI and the Configure
- * Paper Doll menu — this is only called from hooks.js's init hook behind
- * the same ApplicationV2 feature-detect; a v12 GM simply doesn't get these
- * three inline editors, exactly as before (they were never available on v12
- * anyway, since the old settings-menu app was gated the same way).
+ * Settings that render a custom widget via a DataField `type` + an `input:`
+ * function — not guaranteed on a v12 client, so only called behind hooks.js's
+ * ApplicationV2 feature-detect.
  *
- * slotConflictsText is the GM-facing JSON editor for the real `slotConflicts`
- * array setting (registered unconditionally in registerSettings(), above) —
- * a plain StringField (not Array) so the raw textarea text round-trips
- * safely even mid-edit/invalid-JSON; its onChange parses it and, only on
- * success, commits to the real array setting slots.js actually reads.
+ * slotConflictsText is the GM-facing JSON editor for the real slotConflicts
+ * array (registered unconditionally in registerSettings() above) — a plain
+ * StringField so the raw text round-trips safely mid-edit, committing to
+ * the real array only once it parses.
  *
- * itemMarkersReference and handRingSlotsReference are pure documentation,
- * not actual editable values — each a blank StringField "setting" whose
- * entire purpose is a custom `input` that renders static text as a plain
- * <div>/<ul>, no <input>/<textarea>/<select> tag, so it never gets a `name`
- * attribute and never submits a value on save.
+ * itemMarkersReference and handRingSlotsReference are pure documentation —
+ * blank StringField "settings" whose only purpose is a custom `input` that
+ * renders static reference text instead of an actual form field.
  */
 export function registerAdvancedSettings() {
   game.settings.register(MODULE_ID, "slotConflictsText", {
@@ -293,14 +295,6 @@ export async function registerSettingsMenus() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-export function getSetting(key) {
-  return game.settings.get(MODULE_ID, key);
-}
-
-export async function setSetting(key, value) {
-  return game.settings.set(MODULE_ID, key, value);
-}
 
 function updateBracketThreshold(bracketKey, fraction) {
   const thresholds = game.settings.get(MODULE_ID, "bracketThresholds");

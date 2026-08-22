@@ -4,19 +4,15 @@
  * and the single-capacity Exempt slot (ignoresHandSlot-marked items).
  *
  * Hand-slots and ring-slots are "paired slots": two real positions,
- * auto-filled Main then Secondary, placement remembered via a small per-item
- * flag (weapons/shields/rings have no native field encoding hand or finger
- * position, unlike armor sub-types), and swappable via drag-and-drop. This
- * is a deliberate, narrow exception to "derive slot placement from the item
- * itself" (see slots.js) — necessary because no such native field exists.
+ * auto-filled Main then Secondary, placement remembered via a per-item flag
+ * (weapons/shields/rings have no native field for hand/finger position,
+ * unlike armor sub-types), and swappable via drag-and-drop.
  *
- * The doll shows hand-slot occupants across 4 independent VISUAL positions
- * (Melee-Main/-Secondary, Ranged-Main/-Secondary) even though there are only
- * 2 REAL hands — see getHandSlotState()'s docblock for the full placement
- * algorithm, including how a shield (no hand-identity of its own) claims a
- * side. getPhysicalHandOccupants() is the underlying 2-hand truth that
- * equip/swap logic operates on; getHandSlotState() derives the 4-box render
- * view from it.
+ * The doll shows hand-slot occupants across 4 visual boxes (Melee-Main/
+ * -Secondary, Ranged-Main/-Secondary) even though there are only 2 real
+ * hands — see getHandSlotState() for the placement algorithm.
+ * getPhysicalHandOccupants() is the underlying 2-hand truth; getHandSlotState()
+ * derives the 4-box render view from it.
  */
 
 import { FLAG_NS, MODULE_ID, HAND_SLOT_POSITIONS, RING_SLOT_POSITIONS, WEAPON_TWO_HANDED_PROPERTY, WEAPON_LIGHT_PROPERTY, ITEM_MARKERS } from "./constants.js";
@@ -74,16 +70,11 @@ function isHandSlotEligible(item) {
 }
 
 /**
- * True if `item` individually qualifies as part of a two-weapon-fighting
- * pair: it has the Light property, or the actor has dnd5e's own "Enhanced
- * Dual Wielding" character flag (the mechanism a Dual Wielder-style feat
- * grants via an Active Effect targeting flags.dnd5e.enhancedDualWielding)
- * and this weapon is melee and not two-handed. Mirrors dnd5e's own
- * per-weapon eligibility check (Weapon5e#attackModes in dnd5e.mjs) exactly,
- * including that the feat exemption never applies to a ranged weapon — real
- * 5e's two-weapon-fighting rule (and Dual Wielder) is melee-specific. Used
- * by validateAndEquipHandItem() to decide whether equipping a second weapon
- * is a valid dual-wield or displaces whatever's in the opposite hand.
+ * True if `item` individually qualifies for two-weapon fighting: it has the
+ * Light property, or the actor has dnd5e's own "Enhanced Dual Wielding"
+ * flag (granted by a Dual Wielder-style feat) and this weapon is melee and
+ * not two-handed. Used by validateAndEquipHandItem() to decide whether a
+ * second weapon is a valid dual-wield or displaces the opposite hand.
  */
 function canTwoWeaponFight(item, actor) {
   if (isLightWeapon(item)) return true;
@@ -161,43 +152,28 @@ function getPhysicalHandOccupants(actor) {
 }
 
 /**
- * Resolve the doll's 4 independent visual hand positions (Melee-Main/
- * -Secondary, Ranged-Main/-Secondary) from the 2 real hands. All 4 boxes are
- * always present (the doll renders every position unconditionally); an empty
- * box is either open (still reachable by a free hand) or faded/blocked
- * (nothing free hand could reach it given what's currently equipped).
+ * Resolve the doll's 4 visual hand positions (Melee-Main/-Secondary,
+ * Ranged-Main/-Secondary) from the 2 real hands. All 4 boxes always render;
+ * an empty box is either open or faded/blocked.
  *
- *   - Weapons keep strict hand-identity: Main always renders "-Main" of
- *     whichever side matches its type, Secondary always renders
- *     "-Secondary" of its matching side.
- *   - A two-handed weapon collapses both hands into one merged box on its
- *     side; the opposite side's both boxes are faded, blocked by that
- *     weapon (Two-Handed).
- *   - A shield has no hand-identity of its own: it always renders as the
- *     "-Main" box of whichever side is opposite the OTHER hand's weapon
- *     type (defaulting to Ranged if the other hand has no weapon — empty,
- *     or also a shield). Two shields is the one case both Mains can be real
- *     simultaneously — shields don't trigger the weapon-vs-weapon main
- *     exclusivity that naturally falls out of there only being one physical
- *     Main hand.
- *   - An empty box is faded only once BOTH physical hands are committed (no
- *     free hand left) — with any hand still free, nothing is faded, since a
- *     free hand could still reach any remaining box depending on what gets
- *     equipped into it (e.g. a shield can land on either side's Main). The
- *     blocker is whichever item occupies the physical hand that box
- *     addresses (a "-Main" box faded by whatever's in the physical Main
- *     hand, a "-Secondary" box by whatever's in physical Secondary) —
- *     always correct because a "-Secondary" box can only ever be filled by
- *     a weapon actually in that physical hand (shields never render as
- *     Secondary), and an unoccupied "-Main" box with both hands full means
- *     the physical Main hand holds something of the other type.
+ *   - Weapons keep strict hand-identity: Main always renders as "-Main" of
+ *     its matching side, Secondary as "-Secondary" of its matching side.
+ *   - A two-handed weapon collapses both hands into one box on its side;
+ *     both boxes on the opposite side are faded, blocked by that weapon.
+ *   - A shield has no hand-identity: it renders as the "-Main" box of
+ *     whichever side is opposite the other hand's weapon type (defaults to
+ *     Ranged if the other hand is empty or also a shield). Two shields is
+ *     the one case both Mains fill at once.
+ *   - An empty box fades only once both physical hands are committed — with
+ *     any hand still free, nothing fades, since that hand could still reach
+ *     any remaining box. The blocker is whatever occupies the physical hand
+ *     that box addresses (Main box → physical Main's item, Secondary box →
+ *     physical Secondary's item).
  *
  * Returns `{ collapsedSide, collapsedItem, meleeMain, meleeSecondary,
- * rangedMain, rangedSecondary }`. Each of the 4 box fields is shaped
- * `{ item: Item|null, pos: "main"|"secondary", faded: boolean, blocker: Item|null }` —
- * `pos` is the *physical* hand this box addresses (used so click-to-equip
- * and drag-swap target the correct hand precisely), `blocker` is set only
- * when `faded` is true, for the doll's hover tooltip (see describeHandBlocker()).
+ * rangedMain, rangedSecondary }`. Each box is shaped `{ item, pos, faded,
+ * blocker }` — `pos` is the physical hand this box addresses (used to
+ * target the right hand on click/drag), `blocker` is set only when faded.
  */
 export function getHandSlotState(actor) {
   const physical = getPhysicalHandOccupants(actor);
@@ -262,25 +238,19 @@ export function getHandSlotState(actor) {
 }
 
 /**
- * Called from the updateItem hook after a weapon/shield's `system.equipped`
+ * Called from the updateItem hook after a weapon/shield's system.equipped
  * is set to true. Enforces the 2-real-hand capacity:
- *   - a two-handed weapon unequips both current occupants (weapon or
- *     shield alike — this is also how a 2H weapon displaces a shield);
- *   - a one-handed item (weapon or shield) first unequips a collapsing
- *     two-handed weapon (if the pair is currently merged), then takes over
- *     whichever physical hand its remembered flag/auto-fill resolves to,
- *     unequipping any item it displaces there;
- *   - two weapons (never shields — sword+shield is always fine) occupying
- *     both hands at once must form a valid two-weapon-fighting pair (see
- *     canTwoWeaponFight()); if not, whatever was already in the opposite
- *     hand gets displaced too, same "new equip wins" pattern as everything
- *     else here.
- * Shield-specific rendering (which visual box a shield ends up in) is
- * handled entirely by getHandSlotState() above — this function only ever
- * reasons about the 2 physical hands, identically for weapons and shields.
- * Exempt items (IGNORES_HAND_SLOT) never reach here — see validateAndEquipExempt().
- *
- * Returns the list of items that were unequipped, for notification/reporting.
+ *   - a two-handed weapon unequips both current occupants (also how it
+ *     displaces a shield);
+ *   - a one-handed item first unequips a collapsing two-handed weapon (if
+ *     merged), then takes over whichever hand it resolves to, unequipping
+ *     whatever's displaced there;
+ *   - two weapons occupying both hands must form a valid two-weapon pair
+ *     (canTwoWeaponFight()) or the opposite hand's item gets displaced too.
+ * Which visual box a shield renders in is handled by getHandSlotState()
+ * above — this function only reasons about the 2 physical hands. Exempt
+ * items (IGNORES_HAND_SLOT) never reach here — see validateAndEquipExempt().
+ * Returns the items that were unequipped.
  */
 export async function validateAndEquipHandItem(actor, item) {
   if (!isHandSlotEligible(item) || isExempt(item)) return [];
@@ -329,15 +299,9 @@ export async function validateAndEquipHandItem(actor, item) {
 }
 
 /**
- * Drag-and-drop swap within a physical pair: moves `item` into `targetPos`
- * ("main"/"secondary"). If another item already occupies that position, the
- * two swap; otherwise the item just moves. Used by the doll's drag/drop
- * handler for a same-side drag (e.g. swapping which of two melee weapons is
- * your Main hand) — never touches `system.equipped`, only the position
- * flag, since both items stay equipped throughout. A shield's own render
- * position doesn't depend on which physical hand it's in (see
- * getHandSlotState()), so swapping a shield's physical hand is a data-only
- * no-op visually — harmless, not specially handled.
+ * Drag-and-drop swap within a physical pair: moves `item` into `targetPos`,
+ * swapping with whatever's already there. Only changes the position flag —
+ * both items stay equipped throughout.
  */
 export async function swapHandSlot(actor, item, targetPos) {
   if (!HAND_SLOT_POSITIONS.includes(targetPos)) return;
@@ -364,13 +328,9 @@ export function getExemptItem(actor) {
 }
 
 /**
- * True if the actor owns ANY item that could ever occupy the Exempt slot —
- * equipped or not (unlike getExemptItem()/getAllExemptItems(), which only
- * look at what's currently equipped there). Used by the live doll to hide
- * the Exempt position entirely for an actor with nothing that would ever
- * use it, rather than showing a permanently-empty slot. The standalone
- * Configure Paper Doll window ignores this — it always shows every
- * position unconditionally, since there's no actor to check against.
+ * True if the actor owns ANY item that could occupy the Exempt slot,
+ * equipped or not. Used by the live doll to hide the Exempt position
+ * entirely for an actor with nothing that would ever use it.
  */
 export function actorHasExemptCapableItem(actor) {
   return actor.items.some(isExempt);

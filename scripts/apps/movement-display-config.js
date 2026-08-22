@@ -1,16 +1,13 @@
 /**
  * apps/movement-display-config.js
  * Small per-actor popup: edits flags.armor-weight-class.movementDisplay, the
- * AWC-owned, display-only mirror the Movement pills-group (sheet-inject.js's
- * injectMovementPillsGroup) shows on the Details tab. Deliberately does NOT
- * read or write dnd5e's own system.attributes.movement, and does NOT touch
- * dnd5e's native Movement Configuration dialog at all — a prior design that
- * mirrored that dialog's live DOM ran into three stacked fragility sources
- * (its fields are Foundry/dnd5e custom form elements, it's a DocumentSheet
- * that auto-re-renders on any actor update, and setFlag() is an async round
- * trip that could race the next sheet render) documented in the
- * dnd5e-stale-form-submission project note. Plain inputs, current value
- * shown alongside each one, one explicit Save action — nothing to fight.
+ * AWC-owned, display-only mirror the Movement pills-group shows on the
+ * Details tab. Deliberately never touches dnd5e's own
+ * system.attributes.movement or its native Movement Configuration dialog —
+ * a prior design that mirrored that dialog's live DOM hit three stacked
+ * fragility sources (custom form elements, auto-re-render on actor update,
+ * async setFlag() racing the next render). Plain inputs and one explicit
+ * Save action instead — nothing to fight.
  */
 
 import { MODULE_ID, FLAG_NS } from "../constants.js";
@@ -74,11 +71,9 @@ export class AWCMovementDisplayConfig extends AWCApplication {
     const data = foundry.utils.expandObject(formData.object);
     const movement = data.flags?.[FLAG_NS]?.movementDisplay;
     // Cache immediately with what was just submitted, before the
-    // actor.update() round trip even starts — this is what closes the
-    // race documented in resolveMovementDisplay(): if the user's very
-    // next action triggers a sheet render before that round trip lands,
-    // it'll find this cache already correct rather than reading
-    // pre-save persisted data.
+    // actor.update() round trip starts — closes the race documented in
+    // resolveMovementDisplay(): a render triggered before the update
+    // lands finds this cache already correct instead of stale data.
     if (movement) cacheMovementDisplay(this.object.id, movement);
     await this.object.update(data);
   }

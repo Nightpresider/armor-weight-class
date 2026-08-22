@@ -1,38 +1,31 @@
 /**
  * apps/paper-doll-app.js
  * The visual equipment doll. Every slot is derived fresh, on every render,
- * from AWC's own slot system (slots.js / paired-slots.js) — there is no
- * separate flag-based bookkeeping of "what's in which doll slot" the way
- * the original fvtt-paper-doll-ui module had; an item's own Equipment Type
- * (or, for weapons/rings, its small hand/ring-slot position flag) IS the
- * doll's source of truth.
+ * from AWC's own slot system (slots.js / paired-slots.js) — an item's own
+ * Equipment Type (or, for weapons/rings, its hand/ring-slot position flag)
+ * IS the doll's source of truth; no separate flag-based bookkeeping like
+ * the original fvtt-paper-doll-ui module had.
  *
  * Layout: each non-paired SLOT_TYPES sub-type gets its own doll position,
- * EXCEPT the head "base layer" (Padding/Crown/Hat), which are grouped into
- * one shared visual box (see GROUPED_SLOTS) since the three are mutually
- * exclusive — only one can ever be equipped at a time, so three separate
- * boxes would mean two are always empty.
+ * except the head "base layer" (Padding/Crown/Hat) — mutually exclusive,
+ * so grouped into one shared box (GROUPED_SLOTS).
  *
- * The doll is arranged as an armor column (left, under Helmet) mirrored by
- * a clothing column (right, under the head-base group) — each row pairs an
- * armor piece with the clothing layer worn underneath it (Breast/Tunic,
- * Greaves/Trouser, Gauntlet/Glove, Sabaton/Shoe). A top-center row holds the
- * carried-goods slots (Backpack/Belt/Pouch); a bottom-center row holds the
- * Exempt slot above the two Ring positions either side of Necklace. The
- * bottom itself has two independent, always-fixed areas — Melee (left) and
- * Ranged (right) — each showing 0–2 hand-slot boxes; see paired-slots.js's
- * getHandSlotState() for the full placement algorithm (weapons keep strict
- * hand-identity, a shield has none of its own and always claims the "-Main"
- * box of whichever side is free). Rings and hand items are the paired-slot
- * exceptions to "derive slot placement from the item itself".
+ * Armor column (left, under Helmet) mirrors a clothing column (right,
+ * under the head-base group), each row pairing an armor piece with the
+ * clothing layer worn underneath (Breast/Tunic, Greaves/Trouser,
+ * Gauntlet/Glove, Sabaton/Shoe). Top-center row: carried goods
+ * (Backpack/Belt/Pouch). Bottom-center row: Exempt above the two Ring
+ * positions flanking Necklace. Bottom itself: two fixed areas, Melee
+ * (left) and Ranged (right), each showing 0-2 hand-slot boxes — see
+ * paired-slots.js's getHandSlotState() for the placement algorithm. Rings
+ * and hand items are the paired-slot exceptions to "derive placement from
+ * the item itself".
  */
 
 import { MODULE_ID, FLAG_NS, SLOT_TYPES, ITEM_MARKERS } from "../constants.js";
 import { getSlotMap, getItemSlot, itemHasMarker } from "../slots.js";
 import { getHandSlotState, getRingSlotState, getExemptItem, actorHasExemptCapableItem, swapHandSlot, swapRingSlot, describeHandBlocker } from "../paired-slots.js";
 import { AWCApplication } from "./awc-application.js";
-
-const LOG = `${MODULE_ID} |`;
 
 // A "grouped slot" shares one visual doll position across several mutually-
 // exclusive SLOT_TYPES keys. Exported so AWCDollLayoutConfig (the standalone
@@ -89,11 +82,10 @@ export function buildExemptEntry(dollLayout, item) {
 
 /**
  * Empty-state image for a hand-slot side (Melee/Ranged share one image
- * across Main/Secondary, matching dollLayout.handImage's `{melee, ranged}`
- * shape — see resolveDollLayoutKey()). Tolerates a pre-4.x dollLayout where
- * handImage was a single flat string shared by every hand box regardless of
- * side; that legacy value just applies to both sides until explicitly
- * overridden, rather than silently discarding a GM's prior setup.
+ * across Main/Secondary — dollLayout.handImage's `{melee, ranged}` shape).
+ * Tolerates a pre-4.x dollLayout where handImage was a single flat string
+ * shared by every hand box — that legacy value applies to both sides until
+ * explicitly overridden, rather than discarding a GM's prior setup.
  */
 export function resolveHandEmptyImg(dollLayout, side) {
   const val = dollLayout.handImage;
@@ -103,12 +95,11 @@ export function resolveHandEmptyImg(dollLayout, side) {
 
 /**
  * One hand-slot box (Melee/Ranged × Main/Secondary), built from a
- * getHandSlotState() box (`{item, pos, faded, blocker}`). `label`/collapsed-
- * ness are the caller's concern (buildHandGroup below); this just wraps a
- * single box into the same `{kind, item, emptyImg, empty}` shape every other
- * slot entry uses, plus `side`/`box`/`pos` for click/drag/right-click
- * routing and `faded`/`blockerName`/`blockerReason` for the doll's "this
- * position can't be used right now" hover state.
+ * getHandSlotState() box (`{item, pos, faded, blocker}`). Wraps it into the
+ * same `{kind, item, emptyImg, empty}` shape every other slot entry uses,
+ * plus `side`/`box`/`pos` for click/drag routing and
+ * `faded`/`blockerName`/`blockerReason` for the "can't be used right now"
+ * hover state. label/collapsed-ness are the caller's concern (buildHandGroup).
  */
 function buildHandBoxEntry(dollLayout, side, boxKey, box, label) {
   const emptyImg = resolveHandEmptyImg(dollLayout, side);
@@ -124,19 +115,16 @@ function buildHandBoxEntry(dollLayout, side, boxKey, box, label) {
 
 /**
  * Builds one side's (melee or ranged) hand boxes from the full
- * getHandSlotState() result. All positions render unconditionally now — an
- * empty box is either open (still reachable by a free hand) or faded
- * (blocked by what's equipped elsewhere; see getHandSlotState()'s docblock).
- * A collapsed 2H weapon on this side still renders as a single merged box
- * (the side's Main box, which already holds the collapsed item); the
- * Secondary box is simply not rendered rather than shown alongside it.
+ * getHandSlotState() result. An empty box is either open (reachable by a
+ * free hand) or faded (blocked by what's equipped elsewhere — see
+ * getHandSlotState()'s docblock). A collapsed 2H weapon renders as a single
+ * merged box (the side's Main box); the Secondary box isn't rendered
+ * alongside it.
  *
- * Render order puts Main in the doll's outer corner on both sides, Secondary
- * toward the center — bottom row reads (left to right) Melee-Main,
- * Melee-Secondary, [rings], Ranged-Secondary, Ranged-Main. Melee is the
- * doll's leftmost group, so Main-then-Secondary already reads corner-to-
- * center left-to-right; Ranged is the rightmost group, so its DOM order is
- * reversed (Secondary-then-Main) for Main to land in the actual corner.
+ * Render order: Main in the doll's outer corner, Secondary toward the
+ * center. Bottom row reads left-to-right: Melee-Main, Melee-Secondary,
+ * [rings], Ranged-Secondary, Ranged-Main — Ranged's DOM order is reversed
+ * since it's the rightmost group, so Main still lands in the corner.
  */
 export function buildHandGroup(dollLayout, side, handState) {
   const mainKey = `${side}Main`;
@@ -514,13 +502,11 @@ export class AWCPaperDoll extends AWCApplication {
     let item = await fromUuid(data.uuid);
     if (!item) return;
 
-    // Same-pair drag (hand ↔ hand within the SAME side, ring ↔ ring) is a
-    // position swap between two items this actor already owns and has
-    // equipped — never involves a foreign/non-owned item, so the ownership
-    // check below doesn't apply. A cross-side hand drag (melee → ranged)
-    // falls through to a normal equip instead — render position is derived
-    // from the item's own type/shield-placement rules, not chosen by drop
-    // target, so there's nothing meaningful to "swap" across sides.
+    // Same-pair drag (hand ↔ hand within the SAME side, ring ↔ ring) swaps
+    // two items the actor already owns and has equipped — never a foreign
+    // item, so the ownership check below doesn't apply. A cross-side hand
+    // drag (melee → ranged) falls through to a normal equip instead, since
+    // render position comes from the item's own rules, not the drop target.
     if (data.type === "AWCDollItem" && data.kind === "hand" && targetSlot.kind === "hand" && data.side === targetSlot.side) {
       await swapHandSlot(this.actor, item, targetSlot.pos);
       return;
@@ -549,11 +535,9 @@ export class AWCPaperDoll extends AWCApplication {
 
   /**
    * Item-hover tooltip: a small panel of our own, centered in the doll's
-   * content area (see .awc-doll-hover-tooltip in paper-doll.css), rather
-   * than Foundry's own game.tooltip singleton — that positions itself
-   * relative to the hovered element via viewport-space math with no way to
-   * pin it to a fixed spot inside a specific window, which is what a
-   * consistently-centered tooltip needs.
+   * content area (.awc-doll-hover-tooltip in paper-doll.css) — not
+   * Foundry's game.tooltip singleton, which positions relative to the
+   * hovered element with no way to pin to a fixed spot in a window.
    */
   _onHoverIn(event) {
     const slot = this._slotFromElement(event.currentTarget);

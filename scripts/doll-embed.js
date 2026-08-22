@@ -3,24 +3,20 @@
  * Embeds the Paper Doll directly into the character sheet's own portrait
  * area (.sidebar .card .portrait), replacing the native portrait image.
  *
- * IMPORTANT: this file statically imports apps/paper-doll-app.js, whose
- * AWCPaperDoll class extends AWCApplication — a class-definition-time
- * reference to ApplicationV2/HandlebarsApplicationMixin, which don't exist
- * on pre-v13 clients. That makes evaluating THIS file itself unsafe to do
- * unconditionally. This file must only ever be reached via a dynamic
- * import() call already gated behind hooks.js's _hasApplicationV2() check —
- * never add a static `import` of this file from hooks.js or anywhere else
- * in module.json's unconditionally-loaded esmodules list.
+ * IMPORTANT: statically imports apps/paper-doll-app.js, whose AWCPaperDoll
+ * class extends AWCApplication — a class-definition-time reference to
+ * ApplicationV2/HandlebarsApplicationMixin, which don't exist on pre-v13
+ * clients. This file must only ever be reached via a dynamic import()
+ * already gated behind hooks.js's _hasApplicationV2() check — never add a
+ * static `import` of this file anywhere unconditionally loaded.
  *
- * Unlike sheet-inject.js's mergeHeaderIntoTitleBar() (which only needs to
- * MOVE a native element once per genuine Foundry re-render), embedPaperDoll
- * always rebuilds .portrait's content from scratch on every call — there's
- * no "find fresh native content or bail" dependency here, since the doll's
- * markup is entirely data-driven from the actor's current equipment state,
- * which we always have fresh access to regardless of whether Foundry itself
- * re-rendered the sidebar part this cycle. This also means the doll stays
- * in sync on every equip/unequip (via hooks.js's _refreshActorSheet path),
- * not just on full sheet re-renders.
+ * Unlike mergeHeaderIntoTitleBar() (sheet-inject.js, which only MOVEs a
+ * native element per render), embedPaperDoll always rebuilds .portrait's
+ * content from scratch every call — the doll's markup is entirely
+ * data-driven from the actor's current equipment state, always freshly
+ * available regardless of whether Foundry re-rendered the sidebar this
+ * cycle. Keeps the doll in sync on every equip/unequip too (hooks.js's
+ * _refreshActorSheet path), not just full sheet re-renders.
  */
 
 import { MODULE_ID, FLAG_NS, DEFAULT_BRACKETS } from "./constants.js";
@@ -41,34 +37,29 @@ const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/paper-doll.hbs`;
 
 /**
  * Last successfully-rendered doll HTML per actor, keyed by actor.id, so a
- * render triggered by something the doll doesn't actually care about (HP,
- * exhaustion, spell slots — anything that isn't equipment/ability-score/
- * portrait-flag related) can skip the async rebuild entirely. See the
- * fingerprint comment below for why this is safe, and the flash this fixes.
+ * render triggered by something the doll doesn't care about (HP,
+ * exhaustion, spell slots) can skip the async rebuild entirely — see the
+ * fingerprint comment below.
  */
 const _lastEmbed = new Map();
 
 /**
- * Replaces the native portrait `<img>`/`<video>` inside `el`'s
- * `.sidebar .card .portrait` with the rendered doll, and wires all its
- * interactions. Called from hooks.js on every character-sheet render and
- * every equip/unequip refresh (see _refreshActorSheet in hooks.js).
+ * Replaces the native portrait `<img>`/`<video>` with the rendered doll
+ * and wires its interactions. Called on every character-sheet render and
+ * every equip/unequip refresh (hooks.js's _refreshActorSheet).
  *
- * dnd5e's OWN native re-render runs first on every actor update (it owns
- * .portrait, not us) and briefly puts its own plain portrait `<img>` back
- * in .portrait's place before this function gets a chance to re-embed the
- * doll — visible as the doll "disappearing and reappearing" on things like
- * an exhaustion-pip click. buildDollContext/getCapacityData/getACBreakdown
- * only ever read equipped items, ability scores, active-effect bonuses,
- * and the doll's own portrait-image flags — none of which an exhaustion
- * (or HP, or spell-slot) update touches, so the doll's own HTML is
- * GUARANTEED identical to last time in that case. Skipping the rebuild and
- * reapplying the cached HTML synchronously (no awaited renderTemplate call
- * in between) means this whole function resolves inside the same
- * synchronous stretch as the native re-render that triggered it, before
- * the browser gets a chance to paint the intermediate native-portrait
- * frame at all — that's what actually removes the visible flash, not just
- * making the rebuild itself faster.
+ * dnd5e's own native re-render runs first on every actor update (it owns
+ * .portrait) and briefly puts its plain portrait `<img>` back before this
+ * function re-embeds the doll — visible as the doll flashing on things
+ * like an exhaustion-pip click. buildDollContext/getCapacityData/
+ * getACBreakdown only read equipped items, ability scores, effect bonuses,
+ * and the doll's own portrait flags — none of which an exhaustion/HP/
+ * spell-slot update touches, so the doll's HTML is guaranteed identical in
+ * that case. Skipping the rebuild and reapplying cached HTML synchronously
+ * (no awaited renderTemplate in between) resolves this function inside the
+ * same synchronous stretch as the native re-render that triggered it,
+ * before the browser paints the intermediate native-portrait frame at all
+ * — that's what removes the flash, not just speed.
  */
 export async function embedPaperDoll(app, el, actor) {
   if (game.settings.get(MODULE_ID, "dollPlayerOwnedOnly") && !actor.hasPlayerOwner) return;
@@ -80,10 +71,9 @@ export async function embedPaperDoll(app, el, actor) {
   const cap = getCapacityData(actor);
   const ac = getACBreakdown(actor);
 
-  // Fingerprinting is a pure optimization — if it ever throws on an
-  // unexpected data shape, falling through to a full rebuild (fingerprint
-  // stays null, so the cache lookup below naturally misses) is the safe
-  // failure mode, not letting the whole embed abort over it.
+  // Pure optimization — if this throws on an unexpected data shape,
+  // falling through to a full rebuild (fingerprint stays null, cache miss)
+  // is the safe failure mode.
   let fingerprint = null;
   try {
     fingerprint = _fingerprintFor(dollContext, cap, ac);
@@ -93,7 +83,7 @@ export async function embedPaperDoll(app, el, actor) {
 
   const cached = fingerprint && _lastEmbed.get(actor.id);
   if (cached && cached.fingerprint === fingerprint) {
-    _applyEmbed(app, portrait, actor, ac, cached.capacityBarHTML, cached.dollHTML);
+    _applyEmbed(app, portrait, actor, ac, cached.calcBarHTML, cached.dollHTML);
     return;
   }
 
@@ -105,35 +95,30 @@ export async function embedPaperDoll(app, el, actor) {
     return;
   }
 
-  // Isolated from the dollHTML render above: this builds fresh markup from
-  // live actor data rather than a template, so a bug here is a different
-  // failure mode (JS throw, not a rejected promise) — guarded the same way
-  // regardless, since an unguarded throw anywhere in this function's body
-  // aborts the whole embed (established earlier this session).
-  let capacityBarHTML = "";
+  // Builds fresh markup from live actor data rather than a template, so a
+  // bug here throws (not a rejected promise) — guarded the same way
+  // regardless, since an unguarded throw anywhere in this function aborts
+  // the whole embed.
+  let calcBarHTML = "";
   try {
-    capacityBarHTML = buildCapacityBarHTML(cap, ac);
+    calcBarHTML = buildCalcBarHTML(cap, ac);
   } catch (err) {
-    console.error(`${LOG} embedPaperDoll: capacity bar build failed`, err);
+    console.error(`${LOG} embedPaperDoll: calc bar build failed`, err);
   }
 
-  _applyEmbed(app, portrait, actor, ac, capacityBarHTML, dollHTML);
-  _lastEmbed.set(actor.id, { fingerprint, capacityBarHTML, dollHTML });
+  _applyEmbed(app, portrait, actor, ac, calcBarHTML, dollHTML);
+  _lastEmbed.set(actor.id, { fingerprint, calcBarHTML, dollHTML });
 }
 
 /**
- * The context object's own `actor` key is a full Document (circular,
+ * The context's own `actor` key is a full Document (circular,
  * unserializable) — dropped before stringifying. Every slot/ring/exempt/
- * hand-box entry also carries its own `item` field, which is a raw Item
- * Document too (buildSlotEntry etc., apps/paper-doll-app.js) — stringifying
- * one of THOSE directly risks either throwing on circular Document
- * references (item.parent, its actor's own item collection, etc.) or, best
- * case, dragging in the item's entire system/flags/effects data just to
- * detect a change. The replacer below intercepts every "item" key (however
- * deeply nested — melee/ranged wrap their entries in a `slots` array) and
- * substitutes only the fields the doll's own template actually renders per
- * item: icon image and name. cap/ac are folded in separately since they
- * come from a different pipeline (capacity.js/ac.js) than buildDollContext.
+ * hand-box entry also carries a raw Item Document under `item`, which
+ * risks throwing on circular references or dragging in the item's entire
+ * system/flags/effects data just to detect a change. The replacer below
+ * intercepts every "item" key (however nested) and substitutes only the
+ * fields the doll's template actually renders: image and name. cap/ac are
+ * folded in separately — a different pipeline than buildDollContext.
  */
 function _fingerprintFor(dollContext, cap, ac) {
   const { actor: _actor, ...rest } = dollContext;
@@ -147,8 +132,8 @@ function _fingerprintFor(dollContext, cap, ac) {
 }
 
 /** DOM insertion + listener (re)wiring shared by both the cached-HTML fast path and the freshly-rendered path — new DOM nodes need fresh listeners either way. */
-function _applyEmbed(app, portrait, actor, ac, capacityBarHTML, dollHTML) {
-  portrait.innerHTML = capacityBarHTML + dollHTML;
+function _applyEmbed(app, portrait, actor, ac, calcBarHTML, dollHTML) {
+  portrait.innerHTML = calcBarHTML + dollHTML;
   portrait.classList.add("awc-doll-embedded");
 
   const portraitImg = portrait.querySelector(".awc-doll-portrait");
@@ -156,9 +141,9 @@ function _applyEmbed(app, portrait, actor, ac, capacityBarHTML, dollHTML) {
 
   wireDollSlotInteractions(portrait, actor);
   try {
-    wireCapacityBarHoverTooltip(portrait, ac);
+    wireCalcBarHoverTooltip(portrait, ac);
   } catch (err) {
-    console.error(`${LOG} embedPaperDoll: capacity bar hover wiring failed`, err);
+    console.error(`${LOG} embedPaperDoll: calc bar hover wiring failed`, err);
   }
 }
 
@@ -168,15 +153,12 @@ async function renderDollTemplate(context) {
 }
 
 /**
- * Play mode mirrors dnd5e's own native portrait exactly (data-action=
- * "showArtwork", dispatched by Foundry's generic action-delegation system —
- * no manual click listener needed, same as every other data-action button
- * on the sheet). Edit mode mirrors the native file-picker edit action; the
- * exact attribute shape is inferred from dnd5e's character-sidebar.hbs
- * (data-edit="img" data-type="image") since the sheet doesn't expose that
- * partial's own `action` value directly to injected code — worth
- * confirming this opens the file picker correctly once live, adjusting if
- * dnd5e expects a different action name.
+ * Play mode mirrors dnd5e's native portrait (data-action="showArtwork",
+ * dispatched by Foundry's generic action delegation — no manual listener
+ * needed). Edit mode mirrors the native file-picker edit action; the exact
+ * attribute shape is inferred from character-sidebar.hbs (data-edit="img"
+ * data-type="image") since that partial's own action value isn't exposed
+ * to injected code directly — verify live if dnd5e expects a different name.
  */
 function applyPortraitClickAction(app, portraitImg) {
   const editing = !!(app.isEditable && app.isEditMode);
@@ -221,12 +203,12 @@ function buildDollContext(actor) {
   };
 }
 
-// ─── Capacity bar ───────────────────────────────────────────────────────────
-// Same markup/logic as the bar sheet-inject.js's (parked) injectCapacityBar
-// built for its Phase 1 placement — this is that logic's actual home now,
-// rendered inline at the top of the embedded doll instead.
+// ─── Calc bar ───────────────────────────────────────────────────────────────
+// Same markup/logic as sheet-inject.js's parked injectCalcBar (Phase 1
+// placement) — this is that logic's actual home now, rendered inline atop
+// the embedded doll instead.
 
-function buildCapacityBarHTML(cap, ac) {
+function buildCalcBarHTML(cap, ac) {
   let thresholds = DEFAULT_BRACKETS;
   try { thresholds = game.settings.get(MODULE_ID, "bracketThresholds") ?? DEFAULT_BRACKETS; }
   catch { /* settings not initialised yet */ }
@@ -241,19 +223,17 @@ function buildCapacityBarHTML(cap, ac) {
   const indicatorPct = Math.min(103, Math.max(0, cap.ratio * 100));
   const tooltip = `${cap.equippedWeight} / ${cap.capacity} lbs · ${cap.bracket}`;
 
-  // Unarmored is the one bracket without a shield tier (armor-weight-
-  // class.css draws the other three/four as clip-path shapes on the
-  // indicator's own ::before) — a real Font Awesome glyph reads better
-  // for "no shield" than an empty box. ac may be null on the very first
-  // prepareDerivedData pass before applyCustomAC has run once; the
-  // indicator still renders (blank number) rather than the whole doll
-  // embed failing.
+  // Unarmored is the one bracket without a shield tier (CSS draws the
+  // others as clip-path shapes on the indicator's ::before) — a real FA
+  // glyph reads better for "no shield" than an empty box. ac may be null
+  // on the very first prepareDerivedData pass before applyCustomAC has run
+  // once; the indicator still renders (blank number) rather than failing.
   const iconHTML = cap.bracket === "unarmored"
     ? `<i class="fa-solid fa-hand-fist" aria-hidden="true"></i>`
     : "";
 
   return `
-    <div class="awc-capacity-bar awc-${cap.bracket}" data-tooltip="${tooltip}">
+    <div class="awc-calc-bar awc-${cap.bracket}" data-tooltip="${tooltip}">
       ${markers.map(m =>
     `<div class="awc-threshold awc-threshold-${m.key}"
               style="left:${m.pct.toFixed(1)}%"
@@ -268,15 +248,13 @@ function buildCapacityBarHTML(cap, ac) {
 }
 
 /**
- * Hovering the AC indicator shows the same base/mod/items/misc=total
- * breakdown as the native AC badge's own tooltip (shared via ac.js's
- * buildACFormulaHTML), but centered on the doll via the existing
- * .awc-doll-hover-tooltip panel (paper-doll.hbs) instead of a floating
- * cursor tooltip — this indicator only ever exists inside the embedded
- * doll, so unlike sheet-inject.js's AC badge wiring there's no "doll not
- * present" fallback branch to handle here.
+ * Hovering the AC indicator shows the same breakdown as the native AC
+ * badge's tooltip (ac.js's buildACFormulaHTML), centered on the doll via
+ * .awc-doll-hover-tooltip instead of a floating cursor tooltip — this
+ * indicator only exists inside the embedded doll, so no "doll not
+ * present" fallback is needed here (unlike sheet-inject.js's AC wiring).
  */
-function wireCapacityBarHoverTooltip(portrait, ac) {
+function wireCalcBarHoverTooltip(portrait, ac) {
   const indicator = portrait.querySelector(".awc-ac-indicator");
   if (!indicator || !ac) return;
 

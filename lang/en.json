@@ -13,6 +13,8 @@
   "AWC.Settings.ApplyPenalties.Hint":      "Apply speed and disadvantage penalties for Medium, Heavy, and Overburdened brackets.",
   "AWC.Settings.ShowACBreakdown.Name":     "Show AC Breakdown",
   "AWC.Settings.ShowACBreakdown.Hint":     "Display the formula breakdown (10 + max(DEX/CON) + items + misc) on the character sheet.",
+  "AWC.Settings.HideEquippedFromInventory.Name": "Hide Equipped Items from Inventory",
+  "AWC.Settings.HideEquippedFromInventory.Hint": "Hide items shown on the Paper Doll (equipped armor, clothing, jewelry, weapons) from the Inventory tab's item list, so they don't appear twice.",
   "AWC.Settings.BracketThresholds.Name":   "Bracket Thresholds (advanced)",
   "AWC.Settings.BracketThresholds.Hint":   "Raw threshold object. Edit via the settings sliders above.",
 

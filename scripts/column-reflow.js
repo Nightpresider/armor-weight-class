@@ -20,27 +20,17 @@ import { MODULE_ID } from "./constants.js";
 const LOG = `${MODULE_ID} |`;
 
 /**
- * Greedy "longest processing time first" bin-packing: sort sections by
- * item count descending, seed column 1 with the largest, then add each
- * remaining section to whichever column currently has the smaller
- * running total. A well-known good approximation for balancing two
- * bins — not pixel-perfect optimal, doesn't need to be.
+ * Greedy bin-packing: sort sections by item count descending, then add
+ * each to whichever column currently has the smaller running total.
  *
- * Conditions (Effects tab, marked with data-effect-type="awc-conditions"
- * by sheet-inject.js's relocateConditionsIntoEffectsList — it isn't one
- * of dnd5e's own native effect-type sections) is special-cased: pinned
- * as column 2's first entry rather than joining the by-count sort, per
- * an explicit priority request. Its own count still seeds column 2's
- * running total before the remaining sections bin-pack normally around
- * it, so "whichever column stays most dense" for those still accounts
- * for the space Conditions itself is already taking up — HALVED
- * (rounded up) rather than used raw, since Conditions renders as a
- * 2-per-row grid (armor-weight-class.css, Half/Collapsed-only) while
- * every other section here is a single-column list; its true rendered
- * height is ~half its item count, not one line per item. Seeding with
- * the raw count overstated column 2's height enough that it pushed
- * MULTIPLE subsequent sections into column 1 before column 2 was ever
- * considered short enough to receive one — confirmed live.
+ * Conditions (Effects tab, tagged data-effect-type="awc-conditions" by
+ * sheet-inject.js) is pinned as column 2's first entry instead of joining
+ * the sort, per an explicit request. Its own weight seeds column 2's
+ * running total at half its item count (rounded up), not the raw count —
+ * it renders 2-per-row (armor-weight-class.css, Half/Collapsed only), so
+ * its true height is about half its item count. Seeding with the raw
+ * count overstated column 2, pushing later sections into column 1 before
+ * column 2 was ever considered short enough to receive one.
  */
 export function packIntoColumns(sections) {
   const pinned = sections.find(s => s.element.dataset.effectType === "awc-conditions");

@@ -111,7 +111,7 @@ export function getACBreakdown(actor) {
 
 // ─── Shared formula display ──────────────────────────────────────────────────
 // Extracted from sheet-inject.js's injectACBreakdown so doll-embed.js's
-// capacity-bar hover tooltip can show the exact same formula, rather than
+// calc-bar hover tooltip can show the exact same formula, rather than
 // duplicating this HTML-building logic in two places.
 
 export const acOp = (n) => (n < 0 ? "-" : "+");
