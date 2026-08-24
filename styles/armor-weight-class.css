@@ -29,6 +29,42 @@
      1.3px  1.3px 1.3px rgba(0,0,0,0.9);
 }
 
+/* Light theme's text is typically dark, so the black outline above just blends
+   into it instead of adding contrast - same geometry, flipped to white. */
+body.theme-light .dnd5e2.sheet.actor.character {
+  text-shadow:
+    -1.3px -1.3px 1.3px rgba(255,255,255,0.9),
+     1.3px -1.3px 1.3px rgba(255,255,255,0.9),
+    -1.3px  1.3px 1.3px rgba(255,255,255,0.9),
+     1.3px  1.3px 1.3px rgba(255,255,255,0.9);
+}
+
+/* Elements that sit on their own dark/colored badge or banner - not directly on the
+   sheet's light parchment - keep the dark-theme black outline in light theme too, since
+   that's what still reads as an outline there; the white flip above is only right for
+   text sitting on the light parchment itself:
+     - .level-badge: the initiative badge (native class, repurposed by sheet-inject.js),
+       its own gold-toned badge background regardless of theme.
+     - .ability-score .score: just the raw score number (e.g. "13"), always on its own
+       small dark rectangle regardless of theme. The pentagon around it (.label/.mod -
+       "STR"/"+1") is dark text directly on the light parchment pentagon shape, not a
+       dark badge, so those two correctly keep the white flip.
+     - .card .header: the section title bars (Inventory/Features/Spells/Effects tab
+       headers, e.g. "Other Features" / "USES" / "RECOVERY"), always white text on a
+       colored gradient (dnd5e.css's own .dnd5e2 .card .header rule, color: white,
+       unconditional on theme) - the white flip here just doubled up as a blurry halo.
+     - .ac-badge: the native AC number sitting on its own shield badge in front of the
+       paper doll portrait, same reasoning as the others - fixed badge, not parchment.
+   Add further exceptions here following the same reasoning: is this text sitting on a
+   fixed-color badge/banner rather than the sheet's own light/dark background? */
+body.theme-light .dnd5e2.sheet.actor.character :is(.level-badge, .ability-score .score, .card .header, .ac-badge) {
+  text-shadow:
+    -1.3px -1.3px 1.3px rgba(0,0,0,0.9),
+     1.3px -1.3px 1.3px rgba(0,0,0,0.9),
+    -1.3px  1.3px 1.3px rgba(0,0,0,0.9),
+     1.3px  1.3px 1.3px rgba(0,0,0,0.9);
+}
+
 /* TEXT-SHADOW EXCEPTIONS:
    - edit-mode toggle in the window header
    - The "/" in every meter's value/max fraction */
@@ -222,11 +258,34 @@
    (fist/shield) and the calculated AC number on it. Separate from the
    native encomberance meter, which stays untouched on the Inventory tab. */
 
+/* --akd-border-color is set (as an inline style on the sheet root) by
+   a-knights-dream-properties' Panel Transparency color picker, when a GM has actually
+   picked a custom border color there - falls back to native --dnd5e-color-gold
+   whenever that's unset (akdp not installed/active, or no custom color chosen), so
+   this looks identical to before by default. Cross-module compatibility: referenced
+   directly at each point of use (not by redefining a shared root variable) so it
+   correctly picks up whichever actor sheet's own akdp customization applies, since
+   CSS custom properties resolve via DOM inheritance, not by module load order. */
 .awc-calc-bar {
   position: relative;
   min-height: 20px;
   margin: 2px 0;
-  background: transparent;
+  /* Mostly transparent - color-mix() rather than an rgba() split since the color may
+     be either a plain hex (native gold) or whatever hex akdp's color picker stored. */
+  background: color-mix(in srgb, var(--akd-border-color, var(--dnd5e-color-gold)) 12%, transparent);
+  /* Base technique matches dnd5e's own .meter bars (hit points, hit dice, etc.) -
+     dnd5e.css's .dnd5e2 .meter: border: 1px solid var(--dnd5e-color-gold); border-radius: 4px -
+     bumped to 2px here for more presence on this specific bar. Not copying that rule's
+     overflow: hidden - this bar deliberately stays overflow: visible so the AC marker
+     can ride along and extend past its edges. */
+  border: 2px solid var(--akd-border-color, var(--dnd5e-color-gold));
+  border-radius: 4px;
+  /* Same technique dnd5e's own hit-dice bar uses for its left/top highlight
+     (dnd5e.css's .meter.hit-dice.progress::before: inset 0 1px 0 1px var(--dnd5e-highlight-40)) -
+     mirrored here with gold instead of that rule's white. Doesn't touch .awc-threshold or
+     .awc-ac-indicator (the tick marks / fist-round-kite-tower marker), which stay exactly as
+     they were - this only adds a fill + edge highlight to the bar container itself. */
+  box-shadow: inset 0 1px 0 1px color-mix(in srgb, var(--akd-border-color, var(--dnd5e-color-gold)) 40%, transparent);
   pointer-events: none;
   cursor: default;
   overflow: visible;
@@ -237,7 +296,9 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: #5ba3d9;
+  /* Was a fixed blue (#5ba3d9) - now gold by default, matching the calc-bar's own
+     border, and tracks the same --akd-border-color override for the same reason. */
+  background: var(--akd-border-color, var(--dnd5e-color-gold));
   transform: translateX(-50%);
   pointer-events: all;
   cursor: default;
@@ -269,9 +330,24 @@
   align-items: center;
   justify-content: center;
   opacity: 0.55;
+  /* Minor brightness boost - applies once here (rather than per marker-state rule)
+     since filter affects both the color-based unarmored fist and the ::before-based
+     shield fills alike. */
+  filter: brightness(1.15);
 }
 
-.awc-ac-indicator.awc-unarmored .awc-ac-indicator-icon { color: var(--awc-unarmored); }
+/* All five marker fills below were per-armor-weight-class colors (blue/green/yellow/
+   red) - now a single color instead, tracking akdp's Panel Transparency header-color
+   picker the same way the border/threshold above track its border-color picker
+   (falls back to native gold when akdp isn't installed/active or hasn't set one). This
+   deliberately drops the color-coding between unarmored/light/medium/heavy/over, per
+   explicit instruction. */
+/* !important: same reasoning as the sidebar-collapser/awc-sidebar-uncollapse buttons
+   above - something wins over this rule's own `color` specifically (the calc-bar's own
+   border/background, using --akd-border-color, tracks correctly at the same
+   specificity level), and no competing rule could be found in either AWC stylesheet or
+   the JS that builds this element (doll-embed.js) to explain it. */
+.awc-ac-indicator.awc-unarmored .awc-ac-indicator-icon { color: var(--akd-header-color, var(--dnd5e-card-header-1)) !important; }
 .awc-ac-indicator.awc-unarmored .awc-ac-indicator-icon i { font-size: 23px; }
 
 .awc-ac-indicator.awc-light  { width: 30px; height: 30px; }
@@ -292,24 +368,24 @@
 /* Round shield (Light) icon. */
 .awc-ac-indicator.awc-light .awc-ac-indicator-icon::before {
   clip-path: circle(48%);
-  background: var(--awc-light);
+  background: var(--akd-header-color, var(--dnd5e-card-header-1));
 }
 
 /* Kite shield (Medium) icon. */
 .awc-ac-indicator.awc-medium .awc-ac-indicator-icon::before {
   clip-path: polygon(50% 0%, 100% 18%, 100% 60%, 50% 100%, 0% 60%, 0% 18%);
-  background: var(--awc-medium);
+  background: var(--akd-header-color, var(--dnd5e-card-header-1));
 }
 
 /* Tower shield (Heavy/Overburdened) icon. */
 .awc-ac-indicator.awc-heavy .awc-ac-indicator-icon::before,
 .awc-ac-indicator.awc-over .awc-ac-indicator-icon::before {
   clip-path: polygon(50% 0%, 100% 12%, 100% 55%, 85% 92%, 50% 100%, 15% 92%, 0% 55%, 0% 12%);
-  background: var(--awc-heavy);
+  background: var(--akd-header-color, var(--dnd5e-card-header-1));
 }
 
 .awc-ac-indicator.awc-over .awc-ac-indicator-icon::before {
-  background: var(--awc-over);
+  background: var(--akd-header-color, var(--dnd5e-card-header-1));
 }
 
 .awc-ac-indicator.awc-over {
@@ -389,13 +465,48 @@
   transform: translateY(0);
 }
 
+/* Native dnd5e colors this icon --dnd5e-color-gold (dnd5e.css:7793) but gives it no
+   border/frame at all, so it blends into a busy background image with nothing
+   anchoring it visually. Outline follows the border-color picker (falls back to
+   native gold); icon follows the header-color picker (falls back to
+   --dnd5e-card-header-1, the native card header's own red/maroon tone -
+   dnd5e.css:948, #491d25 in dark theme).
+
+   This element also carries the classes card-tab and collapser (not just
+   sidebar-collapser), which match two of dnd5e's own far more specific native rules
+   regardless of source order:
+     - .card-tab.collapser (dnd5e.css:8951-8956, ~8 classes deep) sets
+       transform: translateZ(-1px), which scales the whole element down slightly
+       (confirmed via computed style: a declared 1px border rendered as 0.667px).
+     - .card-tab > i (dnd5e.css:8946-8950) sets the icon's color directly, not just
+       inherited from the button - so the button's own color never mattered for it.
+   !important throughout this block cancels both. The step-up button below doesn't
+   need any of this - AWC creates it fresh each render, so nothing native targets its
+   classes at all. */
 .dnd5e2.sheet.actor.character .sidebar-collapser {
-  transform: translateY(-10px);
   background: transparent;
+  transform: translateY(-10px) !important;
+  border: 1px solid var(--akd-border-color, var(--dnd5e-color-gold)) !important;
+  border-radius: 4px !important;
+  color: var(--akd-header-color, var(--dnd5e-card-header-1)) !important;
+}
+
+.dnd5e2.sheet.actor.character .sidebar-collapser i {
+  color: var(--akd-header-color, var(--dnd5e-card-header-1)) !important;
 }
 
 .dnd5e2.sheet.actor.character .sidebar-collapser:hover,
 .dnd5e2.sheet.actor.character .sidebar-collapser:focus-visible {
+  background: transparent;
+}
+
+/* Step-up button (sheet-inject.js's injectSidebarUncollapseButton) - same outline/icon
+   treatment as its native counterpart above, minus the !important since nothing
+   native targets this element's classes. */
+.dnd5e2.sheet.actor.character .awc-sidebar-uncollapse {
+  border: 1px solid var(--akd-border-color, var(--dnd5e-color-gold));
+  border-radius: 4px;
+  color: var(--akd-header-color, var(--dnd5e-card-header-1));
   background: transparent;
 }
 
@@ -654,6 +765,19 @@
 
 .dnd5e2.sheet.actor.character .tools > h3 {
   justify-content: flex-start;
+}
+
+/* Each row's .name is flex:1 natively (dnd5e.css:9363-9369, shared with Skills/Saves),
+   stretching edge-to-edge as the window widens and pinning the "+#" bonus far away with
+   a growing empty gap - looks especially bad here since Tools usually has few, short
+   rows. Capping the panel's own width lets the sheet background fill the remainder
+   instead, same effect as how the Species/Background pills already behave (fixed-size,
+   never flex-grown to fill available width) - just via a max-width instead of a
+   fundamentally different layout. Skills/Saves aren't touched - only Tools was reported
+   as looking wrong, likely because it typically has the fewest/shortest rows. Value is a
+   first guess - adjust directly if it's too narrow/wide for your actual tool names. */
+.dnd5e2.sheet.actor.character .tab[data-tab="details"] filigree-box.tools {
+  max-width: 320px;
 }
 
 /* ================================================================

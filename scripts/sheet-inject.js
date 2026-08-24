@@ -69,11 +69,9 @@ export function injectCharacterSheetUI(app, html) {
   // ─── Details tab ───
   injectSkillsProficiency(el, actor);
   injectMovementPillsGroup(el, actor);
-  try { relocateToolsUnderSaves(el); } catch (err) { console.error(`${LOG} relocateToolsUnderSaves failed`, err); }
 
   // ─── Inventory tab ───
   relocateInventoryCurrency(el);
-  try { relocateSearchAndAttunement(el); } catch (err) { console.error(`${LOG} relocateSearchAndAttunement failed`, err); }
   try { reflowItemsList(el, { listSelector: '.tab[data-tab="inventory"] .items-list' }); }
   catch (err) { console.error(`${LOG} reflowItemsList (inventory) failed`, err); }
 
@@ -88,14 +86,27 @@ export function injectCharacterSheetUI(app, html) {
   try { reflowItemsList(el, { listSelector: '.tab[data-tab="spells"] .items-list' }); }
   catch (err) { console.error(`${LOG} reflowItemsList (spells) failed`, err); }
 
-  // ─── Effects tab ───
-  // relocateConditionsIntoEffectsList must run before this tab's own
-  // reflowItemsList call — the reflow packs whatever .items-section cards
-  // are currently in the DOM, so Conditions needs to already be moved in
-  // (Half/Collapsed) for it to be counted/packed this render.
-  try { relocateConditionsIntoEffectsList(el); } catch (err) { console.error(`${LOG} relocateConditionsIntoEffectsList failed`, err); }
-  try { reflowItemsList(el, { listSelector: '.tab[data-tab="effects"] .items-list.effects-list' }); }
-  catch (err) { console.error(`${LOG} reflowItemsList (effects) failed`, err); }
+  // ─── Sidebar-collapse-state-dependent relocations (Details/Inventory/Effects) ───
+  // dnd5e restores a persisted sidebar-collapsed/awc-sidebar-half state via its own
+  // force-call path (see hooks.js's _patchSidebarToggle comment) - that class update
+  // isn't guaranteed to have landed on `el` yet by the time this render hook fires,
+  // so reading it synchronously here was intermittently stale on load: Tools would
+  // land in its native spot (under Skills) instead of relocated under Saves,
+  // depending on which mode the sheet was closed in. Deferred a frame, exactly like
+  // the click-triggered re-relocation already does elsewhere in this file
+  // (wireSidebarCollapseReflow / injectSidebarUncollapseButton's own listeners,
+  // same grouping) - by then the restored class is reliably in place.
+  //
+  // relocateConditionsIntoEffectsList must still run before the effects-tab reflow -
+  // the reflow packs whatever .items-section cards are currently in the DOM, so
+  // Conditions needs to already be moved in (Half/Collapsed) for it to be counted.
+  requestAnimationFrame(() => {
+    try { relocateToolsUnderSaves(el); } catch (err) { console.error(`${LOG} relocateToolsUnderSaves failed`, err); }
+    try { relocateSearchAndAttunement(el); } catch (err) { console.error(`${LOG} relocateSearchAndAttunement failed`, err); }
+    try { relocateConditionsIntoEffectsList(el); } catch (err) { console.error(`${LOG} relocateConditionsIntoEffectsList failed`, err); }
+    try { reflowItemsList(el, { listSelector: '.tab[data-tab="effects"] .items-list.effects-list' }); }
+    catch (err) { console.error(`${LOG} reflowItemsList (effects) failed`, err); }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

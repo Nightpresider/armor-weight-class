@@ -511,13 +511,24 @@ function _registerV14SheetHooks() {
     seen.add(name);
     console.debug(`${LOG} registering render hook for actor sheet: ${name}`);
     Hooks.on(`render${name}`, (app, html, _data) => {
-      const actor = app.actor ?? app.document;
-      if (actor?.type !== "character") return;
       // The prototype-chain walk below also registers hooks for generic
       // ancestor classes — Foundry fires render<ClassName> for every class
-      // up an app's chain, so a Rest dialog sharing the same actor triggers
-      // the same hook name (confirmed live: AWC's calc bar was rendering
-      // inside a Rest dialog). actor.sheet === app filters that dialog out.
+      // up an app's chain, so any app sharing an ancestor with an actor sheet
+      // (a Rest dialog, dnd5e's CreatureTypeConfig, etc.) triggers the same
+      // hook name too. Some of those apps define their own `.actor` getter
+      // that assumes it's only ever called on a real actor sheet (e.g.
+      // CreatureTypeConfig's getter dereferences `this.object`, which doesn't
+      // exist on that class) and throws instead of returning undefined — so
+      // this access must be guarded, not just optionally-chained.
+      let actor;
+      try {
+        actor = app.actor ?? app.document;
+      } catch {
+        return;
+      }
+      if (actor?.type !== "character") return;
+      // actor.sheet === app filters out other apps (Rest dialogs, etc.)
+      // sharing this same actor but not actually being its sheet.
       if (actor.sheet !== app) return;
       injectCharacterSheetUI(app, html);
       const el = html instanceof HTMLElement ? html : html?.[0];
@@ -547,7 +558,15 @@ function _registerV14SheetHooks() {
     seen.add(name);
     console.debug(`${LOG} registering render hook for item sheet: ${name}`);
     Hooks.on(`render${name}`, (app, html, _data) => {
-      const item = app.item ?? app.document;
+      // Same reasoning as registerActorSheetHook above — an app sharing an ancestor class
+      // name with an item sheet may define its own `.item` getter that throws rather than
+      // returning undefined when called on an unrelated app instance.
+      let item;
+      try {
+        item = app.item ?? app.document;
+      } catch {
+        return;
+      }
       if (item?.type !== "equipment") return;
       const el = html instanceof HTMLElement ? html : html[0];
       if (el) _patchEquipmentTypeSelect(el, item);
