@@ -249,6 +249,39 @@ function _patchSidebarToggle() {
   };
   proto._awcSidebarPatched = true;
   console.log(`${LOG} Patched ${target.name}._toggleSidebar for two-step collapse`);
+
+  // Switching tabs was dropping Half/Collapsed back to Full every time -
+  // reapplying the mode right after the native tab switch fixes it regardless
+  // of what's actually resetting it. Remembered per tab, per sheet instance
+  // only - reopening the sheet starts back at Full.
+  const _origChangeTab = proto.changeTab;
+  proto.changeTab = function (tab, group, options) {
+    const actor = this.actor ?? this.document;
+    if (group !== "primary" || !_dollAppliesTo(actor)) {
+      return _origChangeTab.call(this, tab, group, options);
+    }
+
+    this._awcTabSidebarMode ??= {};
+    const outgoingTab = this.element.className.match(/tab-(\w+)/)?.[1];
+    if (outgoingTab) this._awcTabSidebarMode[outgoingTab] = _readSidebarMode(this.element);
+
+    const result = _origChangeTab.call(this, tab, group, options);
+    _applySidebarMode(this.element, this._awcTabSidebarMode[tab] ?? "full");
+    return result;
+  };
+  console.log(`${LOG} Patched ${target.name}.changeTab to remember sidebar mode per tab`);
+}
+
+function _readSidebarMode(el) {
+  if (el.classList.contains("sidebar-collapsed")) return "collapsed";
+  if (el.classList.contains("awc-sidebar-half")) return "half";
+  return "full";
+}
+
+function _applySidebarMode(el, mode) {
+  el.classList.remove("awc-sidebar-half", "sidebar-collapsed");
+  if (mode === "half") el.classList.add("awc-sidebar-half");
+  else if (mode === "collapsed") el.classList.add("sidebar-collapsed");
 }
 
 // ── Equipment type definitions ────────────────────────────────────────────────

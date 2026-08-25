@@ -136,8 +136,11 @@ function _applyEmbed(app, portrait, actor, ac, calcBarHTML, dollHTML) {
   portrait.innerHTML = calcBarHTML + dollHTML;
   portrait.classList.add("awc-doll-embedded");
 
+  const editing = !!(app.isEditable && app.isEditMode);
   const portraitImg = portrait.querySelector(".awc-doll-portrait");
-  if (portraitImg) applyPortraitClickAction(app, portraitImg);
+  if (portraitImg) applyPortraitClickAction(portraitImg, editing);
+  if (editing) addEditPortraitButton(portrait, app, actor);
+  else wireJumpToToken(portrait, app, actor);
 
   wireDollSlotInteractions(portrait, actor);
   try {
@@ -153,22 +156,72 @@ async function renderDollTemplate(context) {
 }
 
 /**
- * Play mode mirrors dnd5e's native portrait (data-action="showArtwork",
- * dispatched by Foundry's generic action delegation — no manual listener
- * needed). Edit mode mirrors the native file-picker edit action; the exact
- * attribute shape is inferred from character-sidebar.hbs (data-edit="img"
- * data-type="image") since that partial's own action value isn't exposed
- * to injected code directly — verify live if dnd5e expects a different name.
+ * Edit mode mirrors dnd5e's native editImage action (data-edit/data-type) on the
+ * portrait — mostly superseded by addEditPortraitButton() below, since
+ * .awc-doll-foreground usually covers this element anyway; harmless to leave.
+ * Play mode gets no click action — a single click should do nothing (double-click
+ * jumps to the token instead, see wireJumpToToken()).
  */
-function applyPortraitClickAction(app, portraitImg) {
-  const editing = !!(app.isEditable && app.isEditMode);
+function applyPortraitClickAction(portraitImg, editing) {
   if (editing) {
     portraitImg.dataset.action = "editImage";
     portraitImg.dataset.edit = "img";
     portraitImg.dataset.type = "image";
-  } else {
-    portraitImg.dataset.action = "showArtwork";
   }
+}
+
+/**
+ * Play mode only: double-clicking the doll selects the actor's token, pans the
+ * canvas to it, and minimizes the sheet. getActiveTokens() only sees the
+ * current scene's placeables — no token there means nothing to jump to.
+ */
+function wireJumpToToken(portrait, app, actor) {
+  const content = portrait.querySelector(".awc-doll-content");
+  if (!content) return;
+
+  content.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      const token = actor.getActiveTokens(false, false)[0];
+      if (!token) {
+        ui.notifications.warn(game.i18n.format("AWC.Notify.ActorNotOnScene", { actor: actor.name }));
+        return;
+      }
+      token.control({ releaseOthers: true });
+      canvas.animatePan({ x: token.center.x, y: token.center.y });
+      app.minimize();
+    } catch (err) {
+      console.error(`${LOG} wireJumpToToken failed`, err);
+    }
+  });
+}
+
+/**
+ * Edit mode only: a dedicated button that opens a FilePicker for actor.img
+ * directly, rather than relying on a click reaching .awc-doll-portrait. The
+ * doll's own portrait override (dollImg flag) has its own picker via Configure,
+ * hidden while embedded.
+ */
+function addEditPortraitButton(portrait, app, actor) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "awc-doll-control awc-doll-edit-portrait unbutton";
+  button.dataset.tooltip = game.i18n.localize("AWC.App.EditPortrait.Tooltip");
+  button.innerHTML = `<i class="fas fa-image" inert></i>`;
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const FP = foundry.applications?.apps?.FilePicker?.implementation ?? FilePicker;
+    new FP({
+      current: actor.img,
+      type: "image",
+      callback: path => actor.update({ img: path }),
+      position: { top: (app.position?.top ?? 0) + 40, left: (app.position?.left ?? 0) + 10 },
+    }).render(true);
+  });
+
+  portrait.querySelector(".awc-doll-content")?.appendChild(button);
 }
 
 // ─── Context building ───────────────────────────────────────────────────────

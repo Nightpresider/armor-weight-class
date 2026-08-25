@@ -89,13 +89,14 @@ export function injectCharacterSheetUI(app, html) {
   // ─── Sidebar-collapse-state-dependent relocations (Details/Inventory/Effects) ───
   // dnd5e restores a persisted sidebar-collapsed/awc-sidebar-half state via its own
   // force-call path (see hooks.js's _patchSidebarToggle comment) - that class update
-  // isn't guaranteed to have landed on `el` yet by the time this render hook fires,
-  // so reading it synchronously here was intermittently stale on load: Tools would
-  // land in its native spot (under Skills) instead of relocated under Saves,
-  // depending on which mode the sheet was closed in. Deferred a frame, exactly like
-  // the click-triggered re-relocation already does elsewhere in this file
+  // isn't guaranteed to have landed on `el` yet by the time this render hook fires, so
+  // relocateSearchAndAttunement/relocateConditionsIntoEffectsList (both mode-dependent)
+  // read it stale if called synchronously here. Deferred a frame, exactly like the
+  // click-triggered re-relocation already does elsewhere in this file
   // (wireSidebarCollapseReflow / injectSidebarUncollapseButton's own listeners,
   // same grouping) - by then the restored class is reliably in place.
+  // relocateToolsUnderSaves no longer reads sidebar state at all (see its own comment) so
+  // it isn't exposed to this race either way - left grouped here anyway, harmless.
   //
   // relocateConditionsIntoEffectsList must still run before the effects-tab reflow -
   // the reflow packs whatever .items-section cards are currently in the DOM, so
@@ -841,32 +842,27 @@ export function injectMovementPillsGroup(el, actor) {
 }
 
 /**
- * Relocates Tools (.col-2 .left) to render under Saving Throws (.col-2
- * .right) once the sidebar is collapsed — otherwise freed width stretches
- * both columns uniformly, leaving .right short next to a taller
- * Skills+Tools .left.
+ * Relocates Tools (.col-2 .left) to render under Saving Throws (.col-2 .right) in every
+ * sidebar mode — Skills' own list is just much taller than Saving Throws regardless of
+ * column width, so moving Tools there keeps the shorter Saves column pulling its weight
+ * instead of padding out the already-taller Skills column further, cutting how much
+ * scrolling the tab needs overall. (Previously gated on sidebar-collapsed on the theory that
+ * only a collapsed sidebar frees enough width to matter — but the imbalance being fixed here
+ * is height, not width, so that gate excluded Full/Half mode for no real reason. Dropping it
+ * also removes this function's own dependency on reading the collapse-state class at all, so
+ * it's no longer exposed to that state's own restore-timing race either.)
  *
- * Gated on sidebar-collapsed rather than a live width check — hidden tabs
- * read zero-width via getBoundingClientRect(). A real DOM move, since CSS
- * can't cross .left/.right's separate flex contexts; safe to rerun every
- * render since .after() no-ops when already in position.
+ * A real DOM move, since CSS can't cross .left/.right's separate flex contexts; safe to
+ * rerun every render since .after() no-ops when already in position.
  */
 function relocateToolsUnderSaves(el) {
-  const sheetRoot = el.closest(".sheet.actor.character") ?? el;
-  const collapsed = sheetRoot.classList.contains("sidebar-collapsed");
-
   // .col-2 is a class on the same element as .tab[data-tab="details"],
   // not a separate nested wrapper.
   const tools = el.querySelector('.tab[data-tab="details"].col-2 .left filigree-box.tools');
   if (!tools) return;
 
-  if (collapsed) {
-    const savesTop = el.querySelector('.tab[data-tab="details"].col-2 .right .top');
-    if (savesTop) savesTop.after(tools);
-  } else {
-    const skills = el.querySelector('.tab[data-tab="details"].col-2 .left filigree-box.skills');
-    if (skills) skills.after(tools);
-  }
+  const savesTop = el.querySelector('.tab[data-tab="details"].col-2 .right .top');
+  if (savesTop) savesTop.after(tools);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -15,6 +15,8 @@
   "AWC.Settings.ShowACBreakdown.Hint":     "Display the formula breakdown (10 + max(DEX/CON) + items + misc) on the character sheet.",
   "AWC.Settings.HideEquippedFromInventory.Name": "Hide Equipped Items from Inventory",
   "AWC.Settings.HideEquippedFromInventory.Hint": "Hide items shown on the Paper Doll (equipped armor, clothing, jewelry, weapons) from the Inventory tab's item list, so they don't appear twice.",
+  "AWC.Settings.ShowEquippedSlotTooltips.Name": "Show Equipped Item Tooltips",
+  "AWC.Settings.ShowEquippedSlotTooltips.Hint": "When Image Hover is installed, hovering a slot on the Paper Doll overlay in its popup shows that item's details. Turn off to show the doll without those tooltips.",
   "AWC.Settings.BracketThresholds.Name":   "Bracket Thresholds (advanced)",
   "AWC.Settings.BracketThresholds.Hint":   "Raw threshold object. Edit via the settings sliders above.",
 
@@ -51,10 +53,12 @@
 
   "AWC.UI.ArmorLoad":         "Armor Load",
   "AWC.UI.ACBreakdown":       "AC Breakdown",
+  "AWC.UI.NothingEquipped":   "Nothing equipped",
 
   "AWC.Notify.SlotSwap":      "{old} unequipped from {slot} slot. {new} equipped.",
   "AWC.Notify.SlotConflict":  "{old} unequipped ({slot} conflicts with {new}).",
   "AWC.Notify.OldModuleActive": "fvtt-paper-doll-ui is still active — Armor Weight Class is deferring its own Paper Doll button to avoid a duplicate. Disable the old module once you've verified the replacement works.",
+  "AWC.Notify.ActorNotOnScene": "{actor} is not on this scene.",
 
   "AWC.Notify.MigrationReport.Title":           "Armor Weight Class — Paper Doll Migration",
   "AWC.Notify.MigrationReport.Summary":         "World configuration migrated: {world}. Actor doll settings migrated for {actors} actor(s).",
@@ -64,6 +68,7 @@
 
   "AWC.App.PaperDoll.Title":  "Paper Doll",
   "AWC.App.PaperDoll.Close":  "Close",
+  "AWC.App.EditPortrait.Tooltip": "Change Portrait Image",
 
   "AWC.App.ActorDollConfig.Title":               "Paper Doll — Actor Configuration",
   "AWC.App.ActorDollConfig.Img.Label":           "Portrait Override",

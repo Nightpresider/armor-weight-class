@@ -2,7 +2,7 @@
   "id": "armor-weight-class",
   "title": "Armor Weight Class",
   "description": "Full replacement of the dnd5e armor type system and AC calculation. Introduces nonlinear STR-scaled carry capacity, per-slot equipment validation, per-item AC bonuses, and a weight-bracket armor class system. AC is recalculated from scratch using max(DexMod, ConMod) + sum of item AC bonuses.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "compatibility": {
     "minimum": "12",
     "verified": "14"
@@ -21,11 +21,15 @@
     "scripts/migration.js",
     "scripts/settings.js",
     "scripts/sheet-inject.js",
-    "scripts/hooks.js"
+    "scripts/hooks.js",
+    "scripts/equipped-slots.js",
+    "scripts/compat-image-hover.js",
+    "scripts/compat-combat-tracker-dock.js"
   ],
   "styles": [
     "styles/armor-weight-class.css",
-    "styles/paper-doll.css"
+    "styles/paper-doll.css",
+    "styles/compat-overlays.css"
   ],
   "languages": [
     {

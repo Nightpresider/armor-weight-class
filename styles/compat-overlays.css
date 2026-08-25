@@ -1,0 +1,85 @@
+/* ================================================================
+   Armor Weight Class — Third-Party Compatibility Overlays
+   compat-image-hover.js: the full Paper Doll (paper-doll.hbs, reused verbatim)
+   overlaid on Image Hover's popup - paper-doll.css already styles every
+   .awc-doll-* class module-wide, so only container sizing/positioning lives here.
+   compat-combat-tracker-dock.js: an always-visible stat readout overlaid on each
+   Carousel Combat Tracker portrait, plus styling for the tooltip that module's own
+   compat file rebuilds from scratch (name + equipped items, replacing CCT's own
+   tooltip content - CCT's own .combat-dock-tooltip-wrapper CSS doesn't target our
+   replacement markup, so this styles it from nothing rather than half-relying on it).
+   ================================================================ */
+
+/* ── Image Hover: full Paper Doll overlay ──────────────────────────────────────── */
+
+.awc-image-hover-doll {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  /* Image Hover's popup width varies per token, unlike the sheet's fixed
+     sidebar - cqw keeps the slot-to-portrait ratio the sheet embed uses
+     (46px / 420px ≈ 11%) at any popup size. */
+  container-type: inline-size;
+  --awc-doll-slot-size: 14.55cqw; /* 12.65cqw + another 15% */
+}
+
+/* Only equipped slots show here - no empty-slot placeholders. */
+.awc-image-hover-doll .awc-doll-slot.awc-doll-empty {
+  display: none;
+}
+
+/* Hides the pop-out's cog/close icons - meaningless here, no AWCApplication
+   instance behind them. Same precedent as paper-doll.css's own
+   .awc-doll-embedded .awc-doll-controls rule for the sheet-embedded doll. */
+.awc-image-hover-doll .awc-doll-controls {
+  display: none;
+}
+
+/* No darkening vignette here either - same as the sheet embed's override below. */
+.awc-image-hover-doll .awc-doll-gradient,
+.awc-image-hover-doll .awc-doll-gradient-2 {
+  display: none;
+}
+
+/* ── Carousel Combat Tracker: always-visible stat readout on the card face ──── */
+
+.awc-combatant-stats {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: none;
+  font-size: 9px;
+  line-height: 1.2;
+  color: #fff;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+
+.awc-combatant-stats i {
+  width: 9px;
+  margin-right: 2px;
+  text-align: center;
+}
+
+/* ── Carousel Combat Tracker: rebuilt tooltip (name + equipped items) ────────── */
+
+.awc-equipped-tooltip h3 {
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--awc-doll-main-color, #191005);
+  padding-bottom: 2px;
+}
+
+.awc-equipped-tooltip ul {
+  margin: 0;
+  padding-inline-start: 1.1em;
+}
+
+.awc-equipped-tooltip-empty {
+  opacity: 0.7;
+  font-style: italic;
+  list-style: none;
+  margin-inline-start: -1.1em;
+}

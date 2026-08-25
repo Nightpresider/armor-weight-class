@@ -38,7 +38,8 @@
 .awc-doll-background {
   position: absolute;
   inset: 0;
-  background-color: var(--awc-doll-main-color);
+  /* No background-color on purpose - a transparent portrait should show
+     whatever's actually behind the doll, not a solid backdrop. */
 }
 
 .awc-doll-portrait {
@@ -69,6 +70,17 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  /* Lets clicks in the empty space between slots fall through to the portrait
+     <img> behind it, instead of this full-coverage layer eating them - same
+     pointer-events pattern used below for the AC badge. */
+  pointer-events: none;
+}
+
+.awc-doll-foreground .awc-doll-slot,
+.awc-doll-foreground .awc-doll-controls,
+.awc-doll-foreground .awc-doll-config-panel,
+.awc-doll-foreground .awc-doll-picker {
+  pointer-events: auto;
 }
 
 /* ── Slots ──────────────────────────────────────────────────────── */
@@ -198,6 +210,15 @@
   justify-content: center;
   color: var(--color-text-light-3, #ddd);
   cursor: pointer;
+}
+
+/* doll-embed.js's addEditPortraitButton() - reuses .awc-doll-control's look, just needs
+   positioning. First-guess corner placement. */
+.awc-doll-edit-portrait {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
 }
 
 .awc-doll-control:hover {
@@ -344,6 +365,14 @@
 /* Removes the native portrait's decorative gold frame — the doll has
    its own framing already. */
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded::after {
+  display: none;
+}
+
+/* Drops the darkening vignette (.awc-doll-gradient/-2) on the sheet embed - with the
+   solid backdrop removed too, it read as an unwanted shadow. Image Hover's overlay
+   drops it too (compat-overlays.css); the pop-out keeps it. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded .awc-doll-gradient,
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded .awc-doll-gradient-2 {
   display: none;
 }
 

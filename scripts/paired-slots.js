@@ -107,10 +107,15 @@ function getItemHandSlot(item) {
   return HAND_SLOT_POSITIONS.includes(pos) ? pos : null;
 }
 
-/** Weapons/shields currently occupying a hand-slot (excludes exempt items — they get their own single slot, see below). */
-function getHandSlotOccupants(actor) {
+/**
+ * Weapons/shields currently occupying a hand-slot (excludes exempt items —
+ * they get their own single slot, see below). `excludeId` — see
+ * getPhysicalHandOccupants()'s docblock.
+ */
+function getHandSlotOccupants(actor, excludeId = null) {
   const occupants = [];
   for (const item of actor.items) {
+    if (item.id === excludeId) continue;
     if (!item.system?.equipped || !isHandSlotEligible(item)) continue;
     if (isExempt(item)) continue;
     occupants.push(item);
@@ -123,9 +128,15 @@ function getHandSlotOccupants(actor) {
  * collapsed them into one. This is the physical truth that
  * validateAndEquipHandItem()/swapHandSlot() operate on; getHandSlotState()
  * (below) derives the doll's 4-box render view from it.
+ *
+ * `excludeId`: the updateItem hook fires *after* the item's own equip is
+ * already committed, so an un-excluded "before" snapshot would count a
+ * two-handed weapon as already occupying both hands by itself, hiding what
+ * was actually there and skipping its displacement. Exclude it so "before"
+ * genuinely means before.
  */
-function getPhysicalHandOccupants(actor) {
-  const occupants = getHandSlotOccupants(actor);
+function getPhysicalHandOccupants(actor, excludeId = null) {
+  const occupants = getHandSlotOccupants(actor, excludeId);
   const twoHanded = occupants.find(isTwoHanded);
 
   if (twoHanded) {
@@ -256,7 +267,7 @@ export async function validateAndEquipHandItem(actor, item) {
   if (!isHandSlotEligible(item) || isExempt(item)) return [];
 
   const unequipped = [];
-  const before = getPhysicalHandOccupants(actor);
+  const before = getPhysicalHandOccupants(actor, item.id);
 
   if (isTwoHanded(item)) {
     for (const occupant of [before.main, before.secondary]) {
@@ -368,13 +379,17 @@ function getItemRingSlot(item) {
   return RING_SLOT_POSITIONS.includes(pos) ? pos : null;
 }
 
-function getRingOccupants(actor) {
-  return actor.items.filter(item => item.system?.equipped && getItemSlot(item) === "ring");
+function getRingOccupants(actor, excludeId = null) {
+  return actor.items.filter(item => item.id !== excludeId && item.system?.equipped && getItemSlot(item) === "ring");
 }
 
-/** Returns { main: item|null, secondary: item|null }. */
-export function getRingSlotState(actor) {
-  const occupants = getRingOccupants(actor);
+/**
+ * Returns { main: item|null, secondary: item|null }. `excludeId` — same
+ * reason as getPhysicalHandOccupants(): without it, a ring being newly
+ * equipped counts as already occupying a slot, wrongly displacing the other.
+ */
+export function getRingSlotState(actor, excludeId = null) {
+  const occupants = getRingOccupants(actor, excludeId);
   const state = { main: null, secondary: null };
   const unplaced = [];
   for (const item of occupants) {
@@ -399,7 +414,7 @@ export function getRingSlotState(actor) {
 export async function validateAndEquipRing(actor, item) {
   if (getItemSlot(item) !== "ring") return [];
 
-  const before = getRingSlotState(actor);
+  const before = getRingSlotState(actor, item.id);
   const requestedPos = getItemRingSlot(item);
   const targetPos = requestedPos ?? (!before.main ? "main" : !before.secondary ? "secondary" : "main");
 

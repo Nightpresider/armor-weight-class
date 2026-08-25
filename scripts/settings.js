@@ -191,6 +191,18 @@ export function registerSettings() {
     type: Number,
     default: 0,
   });
+
+  // ── Equipped-slot icon tooltips (Image Hover / Carousel Combat Tracker) ───
+  // Client-scoped, not world - purely a per-viewer display preference, unlike
+  // everything else in this file.
+  game.settings.register(MODULE_ID, "showEquippedSlotTooltips", {
+    name: "AWC.Settings.ShowEquippedSlotTooltips.Name",
+    hint: "AWC.Settings.ShowEquippedSlotTooltips.Hint",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
 }
 
 /**
