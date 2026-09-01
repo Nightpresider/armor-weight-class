@@ -6,6 +6,11 @@
 export const MODULE_ID = "armor-weight-class";
 export const FLAG_NS   = MODULE_ID; // namespace for all actor/item flags
 
+// a-knights-dream-properties declares custom item properties/flags AWC reads (Equipment
+// Properties checkboxes, pocket-carrier config) - AWC never hard-depends on it being active,
+// every read through this ID degrades to "flag absent" defaults if it isn't.
+export const AKDP_MODULE_ID = "a-knights-dream-properties";
+
 // ─── Armor Brackets ──────────────────────────────────────────────────────────
 // Thresholds are a fraction (0-1) of carry capacity. Defaults — GM-editable
 // in settings.
@@ -57,6 +62,24 @@ export const SLOT_TYPES = {
 
 export const SLOT_KEYS = Object.keys(SLOT_TYPES);
 
+// ─── Drag/Drop Highlight Classes ───────────────────────────────────────────────
+// Shared between drag-highlight.js (applies them to the doll's own static slots) and
+// paper-doll-app.js's renderPocketSlots (applies them directly to drag-revealed pocket-slot
+// boxes, which exist only during a drag and aren't part of the doll's static slot set
+// drag-highlight.js iterates) - centralized here since drag-highlight.js already imports FROM
+// paper-doll-app.js, so paper-doll-app.js importing these back the other way would cycle.
+export const DRAG_OCCUPIED_CLASS = "awc-doll-drop-occupied";
+export const DRAG_EMPTY_CLASS = "awc-doll-drop-empty";
+export const DRAG_TARGET_CLASS = "awc-doll-drop-target";
+
+// ─── Container Sub-Types ──────────────────────────────────────────────────────
+// dnd5e's native Container item has no subtype field at all — a-knights-dream-properties'
+// containerTypeConfig.mjs adds one via a flag. Backpack/Belt Pouch/Purse map onto the regular
+// slots above; Keg/Bobble are hand-slot items instead (see paired-slots.js).
+export const CONTAINER_TYPE_FLAG = "containerType";
+export const CONTAINER_TYPE_SLOT_MAP = { backpack: "backpack", beltPouch: "belt", purse: "purse" };
+export const HAND_ELIGIBLE_CONTAINER_TYPES = ["keg", "bobble"];
+
 // Legacy slot names from earlier versions — mapped to their new names for
 // backwards-compatibility with items that still carry the old flag value.
 export const SLOT_LEGACY_MAP = { chest: "breast", gloves: "gauntlet" };
@@ -85,6 +108,7 @@ export const ITEM_MARKERS = {
   COVERS_FACE:       "coversFace",       // on a Helmet: blocks the Mask slot
   BYPASS_FACE_COVER: "bypassFaceCover",  // on a Mask: ignores a coversFace Helmet
   IGNORES_HAND_SLOT: "ignoresHandSlot",  // on a Shield/Weapon: doesn't consume a hand-slot
+  POCKETED:          "pocketed",         // on any equipped item: a valid pocket carrier — see paired-slots.js's isPocketCarrier()
 };
 
 // ─── Paired Slots (hand-slots & ring-slots) ───────────────────────────────────

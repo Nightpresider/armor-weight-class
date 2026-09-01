@@ -33,6 +33,7 @@ Hooks.once("init", async () => {
   // and ready, so patching here guarantees the override runs on first load).
   _patchArmorClass();
   _patchEquipmentTypes();
+  _patchFavorites();
 
   if (_hasApplicationV2()) {
     registerAdvancedSettings();
@@ -59,6 +60,17 @@ Hooks.once("ready", async () => {
   _patchArmorClass();
   try { _patchSidebarToggle(); } catch (err) { console.error(`${LOG} _patchSidebarToggle failed`, err); }
   _registerV14SheetHooks();
+
+  // Dynamic import (not a static one, not added to module.json's esmodules) -
+  // drag-highlight.js statically imports apps/paper-doll-app.js, which is only ever
+  // touched from post-ready entry points elsewhere in this file (sheet renders, header
+  // button clicks) - registering this at "init" left that whole import chain unproven
+  // this early, with no .catch() to surface a failure if one occurred.
+  if (_hasApplicationV2()) {
+    import("./drag-highlight.js")
+      .then(mod => mod.registerDragHighlight())
+      .catch(err => console.error(`${LOG} drag-highlight registration failed`, err));
+  }
 
   if (game.user.isGM) {
     await runMigration();
@@ -250,10 +262,8 @@ function _patchSidebarToggle() {
   proto._awcSidebarPatched = true;
   console.log(`${LOG} Patched ${target.name}._toggleSidebar for two-step collapse`);
 
-  // Switching tabs was dropping Half/Collapsed back to Full every time -
-  // reapplying the mode right after the native tab switch fixes it regardless
-  // of what's actually resetting it. Remembered per tab, per sheet instance
-  // only - reopening the sheet starts back at Full.
+  // Reapplies Half/Collapsed right after the native tab switch, which otherwise resets it back
+  // to Full. Remembered per tab, per sheet instance only - reopening the sheet starts at Full.
   const _origChangeTab = proto.changeTab;
   proto.changeTab = function (tab, group, options) {
     const actor = this.actor ?? this.document;
@@ -378,6 +388,70 @@ function _applyIsArmorPatch(EquipmentData) {
   console.log(`${LOG} Patched EquipmentData.isArmor`);
 }
 
+// ── Favorites: weapons and armor already have quick access from the paper doll ──────────────
+// (the attack popup, the equip slots) - offering them in the sheet's Favorites list too is
+// redundant, so they're excluded from being favorited at all.
+
+/** True if `item` shouldn't be favoritable anymore - a weapon, or armor per AWC's own
+ *  isArmor patch (_applyIsArmorPatch below), not just dnd5e's native narrower definition. */
+function _isFavoriteExcluded(item) {
+  return item?.type === "weapon" || item?.system?.isArmor === true;
+}
+
+/**
+ * Blocks addFavorite() at the data level - every favoriting path (the inventory list's
+ * context menu, an activity's own context menu, or a direct drag into the Favorites panel)
+ * ultimately calls this, so nothing sneaks through even without patching each menu separately.
+ */
+function _applyFavoritePatch(CharacterData) {
+  if (CharacterData.prototype._awcFavoritePatched) return;
+  const _origAddFavorite = CharacterData.prototype.addFavorite;
+  CharacterData.prototype.addFavorite = function (favorite) {
+    if (favorite?.type === "item" || favorite?.type === "activity") {
+      let doc;
+      try { doc = fromUuidSync(favorite.id, { relative: this.parent }); } catch { doc = null; }
+      const item = doc?.documentName === "Item" ? doc : doc?.item;
+      if (_isFavoriteExcluded(item)) return Promise.resolve(this.parent);
+    }
+    return _origAddFavorite.call(this, favorite);
+  };
+  CharacterData.prototype._awcFavoritePatched = true;
+  console.log(`${LOG} Patched CharacterData.addFavorite to exclude weapons/armor`);
+}
+
+/** Hides the Favorite/Unfavorite entry from the inventory list's own context menu for
+ *  weapons/armor - the data-level block above still applies regardless, this just keeps the
+ *  menu from offering an action that would silently do nothing. */
+function _applyInventoryContextMenuPatch(InventoryElement) {
+  if (InventoryElement.prototype._awcFavoritePatched) return;
+  const _origGetContextOptions = InventoryElement.prototype._getContextOptions;
+  InventoryElement.prototype._getContextOptions = function (item, element) {
+    const options = _origGetContextOptions.call(this, item, element);
+    if (!_isFavoriteExcluded(item)) return options;
+    return options.filter(o => o.name !== "DND5E.Favorite" && o.name !== "DND5E.FavoriteRemove");
+  };
+  InventoryElement.prototype._awcFavoritePatched = true;
+  console.log(`${LOG} Patched InventoryElement to hide Favorite for weapons/armor`);
+}
+
+function _patchFavorites() {
+  const CharacterData = globalThis.dnd5e?.dataModels?.actor?.CharacterData ?? CONFIG.Actor?.dataModels?.["character"];
+  if (CharacterData) _applyFavoritePatch(CharacterData);
+  else Hooks.once("ready", () => {
+    const cls = globalThis.dnd5e?.dataModels?.actor?.CharacterData ?? CONFIG.Actor?.dataModels?.["character"];
+    if (cls) _applyFavoritePatch(cls);
+    else console.warn(`${LOG} CharacterData not found — addFavorite patch skipped`);
+  });
+
+  const InventoryElement = customElements.get("dnd5e-inventory");
+  if (InventoryElement) _applyInventoryContextMenuPatch(InventoryElement);
+  else Hooks.once("ready", () => {
+    const cls = customElements.get("dnd5e-inventory");
+    if (cls) _applyInventoryContextMenuPatch(cls);
+    else console.warn(`${LOG} dnd5e-inventory custom element not found — Favorite menu patch skipped`);
+  });
+}
+
 /**
  * Directly rewrite the Equipment Type <select> on every item sheet render.
  * This is the reliable path for dnd5e v4, where SelectField choices are baked
@@ -386,10 +460,9 @@ function _applyIsArmorPatch(EquipmentData) {
  * choosing e.g. "Helmet" sets system.type.value = "helmet" directly, which
  * is what getItemSlot() (slots.js), capacity.js, and the doll all key off.
  *
- * (A cascading generic Type + separate Subtype dropdown was tried and
- * reverted — dnd5e's own form submission was overwriting the Type value
- * whenever a different field changed afterward, in a way that couldn't be
- * reliably chased down without live debugging access. Flat list only.)
+ * A cascading generic Type + separate Subtype dropdown isn't safe here — dnd5e's own form
+ * submission overwrites the Type value whenever a different field changes afterward. Flat
+ * list only.
  */
 function _findEquipmentTypeSelect(el) {
   return (

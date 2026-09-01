@@ -99,6 +99,21 @@ export function registerSettings() {
     onChange: () => refreshAllSheets(),
   });
 
+  // ── Keg-type Container one-handed cutoff ──────────────────────────────────
+  // A Keg's handedness is dynamic (see paired-slots.js's isKegTwoHanded()) - one-handed once
+  // its weight is under this fraction of the actor's own effective carry capacity
+  // (system.attributes.encumbrance.max), two-handed above it.
+  game.settings.register(MODULE_ID, "kegOneHandedFraction", {
+    name: "AWC.Settings.KegOneHandedFraction.Name",
+    hint: "AWC.Settings.KegOneHandedFraction.Hint",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 0.1, max: 1, step: 0.05 },
+    default: 1 / 3,
+    onChange: () => refreshAllSheets(),
+  });
+
   // ── Hide doll-equipped items from the Inventory list ─────────────────────
   game.settings.register(MODULE_ID, "hideEquippedFromInventory", {
     name: "AWC.Settings.HideEquippedFromInventory.Name",

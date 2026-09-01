@@ -15,6 +15,8 @@
   "AWC.Settings.ShowACBreakdown.Hint":     "Display the formula breakdown (10 + max(DEX/CON) + items + misc) on the character sheet.",
   "AWC.Settings.HideEquippedFromInventory.Name": "Hide Equipped Items from Inventory",
   "AWC.Settings.HideEquippedFromInventory.Hint": "Hide items shown on the Paper Doll (equipped armor, clothing, jewelry, weapons) from the Inventory tab's item list, so they don't appear twice.",
+  "AWC.Settings.KegOneHandedFraction.Name": "Keg One-Handed Cutoff",
+  "AWC.Settings.KegOneHandedFraction.Hint": "A Keg-type Container is one-handed while its weight is under this fraction of the actor's own carrying capacity, and two-handed above it. Default: 1/3.",
   "AWC.Settings.ShowEquippedSlotTooltips.Name": "Show Equipped Item Tooltips",
   "AWC.Settings.ShowEquippedSlotTooltips.Hint": "When Image Hover is installed, hovering a slot on the Paper Doll overlay in its popup shows that item's details. Turn off to show the doll without those tooltips.",
   "AWC.Settings.BracketThresholds.Name":   "Bracket Thresholds (advanced)",

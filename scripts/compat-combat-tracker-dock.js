@@ -1,18 +1,6 @@
 /**
  * compat-combat-tracker-dock.js
- * Overlays two things onto each combatant portrait in Carousel Combat Tracker, entirely
- * from AWC's side - CCT's own code/templates are never touched: an always-visible stat
- * readout (HP/AC/Speed/Spell DC), and a rebuilt hover tooltip (actor name + equipped
- * items) replacing CCT's own. No-ops if CCT isn't active.
- *
- * CombatantPortrait's own async renderInner() writes innerHTML then data-tooltip
- * together, unawaited by its callers - a MutationObserver per portrait re-injects right
- * after that childList change lands, guaranteed after CCT's own write, never before.
- *
- * Discovering new portraits has no single native event worth trusting (renderCombatTracker/
- * updateCombatant/a MutationObserver on #ui-top were all tried, none reliable) - a 1s poll
- * sidesteps the question entirely; watchPortrait()/watchAllPortraits() are idempotent so
- * re-scanning is cheap.
+ * Stat readout + rebuilt tooltip overlaid on Carousel Combat Tracker portraits.
  */
 
 import { MODULE_ID } from "./constants.js";

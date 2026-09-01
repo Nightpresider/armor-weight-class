@@ -66,7 +66,7 @@ export class AWCApplication extends HandlebarsApplicationMixin(ApplicationV2) {
     if (activeOptions && !activeOptions.position && this.constructor._positionSettingRegistered) {
       const saved = game.settings.get(MODULE_ID, this.constructor._positionSettingKey);
       if (saved && Object.keys(saved).length) {
-        // Discard any width/height a stale pre-fix save might still carry —
+        // A non-resizable window's saved position should never carry width/height —
         // see the matching guard in _savePosition().
         const restored = this.options.window?.resizable === false
           ? { left: saved.left, top: saved.top }

@@ -2,12 +2,9 @@
  * apps/movement-display-config.js
  * Small per-actor popup: edits flags.armor-weight-class.movementDisplay, the
  * AWC-owned, display-only mirror the Movement pills-group shows on the
- * Details tab. Deliberately never touches dnd5e's own
- * system.attributes.movement or its native Movement Configuration dialog —
- * a prior design that mirrored that dialog's live DOM hit three stacked
- * fragility sources (custom form elements, auto-re-render on actor update,
- * async setFlag() racing the next render). Plain inputs and one explicit
- * Save action instead — nothing to fight.
+ * Details tab. Deliberately never touches dnd5e's own system.attributes.movement
+ * or its native Movement Configuration dialog — plain inputs and one explicit
+ * Save action, so there's no custom-form-element or auto-re-render fragility to fight.
  */
 
 import { MODULE_ID, FLAG_NS } from "../constants.js";

@@ -12,7 +12,7 @@
 import { MODULE_ID } from "../constants.js";
 import {
   LEFT_COLUMN, RIGHT_COLUMN, CENTER_TOP_ROW, GROUPED_SLOTS, PAPER_DOLL_WIDTH,
-  getDollLayout, buildSlotEntry, buildGroupedSlotEntry, buildRingEntry, buildExemptEntry, resolveHandEmptyImg, pickSlotImage, clearSlotImage,
+  getDollLayout, buildSlotEntry, buildGroupedSlotEntry, buildRingEntry, buildExemptEntry, buildQuiverEntry, resolveHandEmptyImg, pickSlotImage, clearSlotImage,
 } from "./paper-doll-app.js";
 import { AWCApplication } from "./awc-application.js";
 
@@ -78,6 +78,8 @@ export class AWCDollLayoutConfig extends AWCApplication {
       ],
       melee: buildConfigHandGroup(layout, "melee"),
       ranged: buildConfigHandGroup(layout, "ranged"),
+      showQuiver: true,
+      quiver: buildQuiverEntry(layout, null),
       dollMainColor: game.settings.get(MODULE_ID, "dollMainColor"),
       dollBrightness: game.settings.get(MODULE_ID, "dollBrightness"),
     };

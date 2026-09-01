@@ -1,17 +1,11 @@
 /**
  * compat-image-hover.js
- * Renders the actual Paper Doll (every slot, empty ones included) as a read-only overlay
- * inside Image Hover's popup - reuses paper-doll-app.js's own context builders and the
- * shared paper-doll.hbs/paper-doll.css, same as doll-embed.js does for the sheet. No-ops
- * if Image Hover isn't active. Dynamic-imports paper-doll-app.js behind _hasApplicationV2()
- * (unsafe to import statically pre-v13 - see doll-embed.js). Hover-only, no drag/drop/click -
- * this is a transient preview popup, not an editable surface. Appended as a new sibling,
- * never touching Image Hover's own img/video.
+ * Read-only Paper Doll overlay on Image Hover's popup.
  */
 
 import { MODULE_ID, FLAG_NS } from "./constants.js";
 import { getSlotMap } from "./slots.js";
-import { getHandSlotState, getRingSlotState, getExemptItem, actorHasExemptCapableItem, describeHandBlocker } from "./paired-slots.js";
+import { getHandSlotState, getRingSlotState, getExemptItem, actorHasExemptCapableItem, describeHandBlocker, getQuiverItem, actorHasEquippedRangedWeapon } from "./paired-slots.js";
 
 const LOG = `${MODULE_ID} |`;
 const TEMPLATE_PATH = `modules/${MODULE_ID}/templates/paper-doll.hbs`;
@@ -72,7 +66,7 @@ async function renderDollOverlay(actor) {
 
 /** Same shape as AWCPaperDoll._prepareContext() / doll-embed.js's buildDollContext(). */
 function buildDollContext(mod, actor) {
-  const { getDollLayout, buildSlotEntry, buildGroupedSlotEntry, buildRingEntry, buildExemptEntry, buildHandGroup, GROUPED_SLOTS, LEFT_COLUMN, RIGHT_COLUMN, CENTER_TOP_ROW } = mod;
+  const { getDollLayout, buildSlotEntry, buildGroupedSlotEntry, buildRingEntry, buildExemptEntry, buildQuiverEntry, buildHandGroup, GROUPED_SLOTS, LEFT_COLUMN, RIGHT_COLUMN, CENTER_TOP_ROW } = mod;
 
   const slotMap = getSlotMap(actor);
   const handState = getHandSlotState(actor);
@@ -100,6 +94,8 @@ function buildDollContext(mod, actor) {
     ],
     melee: buildHandGroup(layout, "melee", handState),
     ranged: buildHandGroup(layout, "ranged", handState),
+    showQuiver: actorHasEquippedRangedWeapon(actor),
+    quiver: buildQuiverEntry(layout, getQuiverItem(actor)),
   };
 }
 

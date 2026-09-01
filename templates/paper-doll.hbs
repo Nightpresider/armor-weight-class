@@ -93,14 +93,27 @@
           {{/each}}
         </div>
 
-        <div class="awc-doll-hand-pair awc-doll-ranged-pair {{#if ranged.collapsed}}awc-doll-hand-collapsed{{/if}}">
-          {{#each ranged.slots as |slot|}}
-          <div class="awc-doll-slot awc-doll-hand-slot {{slot.empty}} {{slot.faded}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
-               data-kind="hand" data-side="{{slot.side}}" data-box="{{slot.box}}" data-pos="{{slot.pos}}"
-               style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
-            {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+        <div class="awc-doll-ranged-column">
+          {{#if showQuiver}}
+          <div class="awc-doll-center-row awc-doll-quiver-row">
+            <div class="awc-doll-slot awc-doll-quiver-slot {{quiver.empty}} {{#unless quiver.item}}awc-doll-quiver-needs-ammo{{/unless}}" draggable="{{#if quiver.item}}true{{else}}false{{/if}}"
+                 data-kind="quiver"
+                 style="background-image:url('{{#if quiver.item}}{{quiver.item.img}}{{else}}{{quiver.emptyImg}}{{/if}}')">
+              {{#unless quiver.item}}{{#unless quiver.emptyImg}}<i class="{{quiver.icon}}"></i>{{/unless}}{{/unless}}
+              {{#if quiver.item}}<span class="awc-doll-quiver-qty">{{quiver.quantity}}</span>{{/if}}
+            </div>
           </div>
-          {{/each}}
+          {{/if}}
+
+          <div class="awc-doll-hand-pair awc-doll-ranged-pair {{#if ranged.collapsed}}awc-doll-hand-collapsed{{/if}}">
+            {{#each ranged.slots as |slot|}}
+            <div class="awc-doll-slot awc-doll-hand-slot {{slot.empty}} {{slot.faded}}" draggable="{{#if slot.item}}true{{else}}false{{/if}}"
+                 data-kind="hand" data-side="{{slot.side}}" data-box="{{slot.box}}" data-pos="{{slot.pos}}"
+                 style="background-image:url('{{#if slot.item}}{{slot.item.img}}{{else}}{{slot.emptyImg}}{{/if}}')">
+              {{#unless slot.item}}{{#unless slot.emptyImg}}<i class="{{slot.icon}}"></i>{{/unless}}{{/unless}}
+            </div>
+            {{/each}}
+          </div>
         </div>
       </div>
     </div>

@@ -6,19 +6,31 @@
  * slotConflicts setting do. `ring` is excluded — paired-slots.js owns it.
  */
 
-import { FLAG_NS, MODULE_ID, SLOT_KEYS, SLOT_TYPES, SLOT_LEGACY_MAP, DEFAULT_SLOT_CONFLICTS, ITEM_MARKERS } from "./constants.js";
+import { FLAG_NS, MODULE_ID, AKDP_MODULE_ID, SLOT_KEYS, SLOT_TYPES, SLOT_LEGACY_MAP, DEFAULT_SLOT_CONFLICTS, ITEM_MARKERS, CONTAINER_TYPE_FLAG, CONTAINER_TYPE_SLOT_MAP } from "./constants.js";
 
 // ─── Slot Queries ─────────────────────────────────────────────────────────
 
 /**
+ * Read a Container item's AKDP-configured sub-type (Backpack/Belt Pouch/Purse/Keg/Bobble),
+ * or null. AKDP flag first, AWC-namespace fallback — matches getPocketCapacity()'s pattern
+ * in paired-slots.js, so a standalone AWC install can still be driven manually.
+ */
+export function getContainerType(item) {
+  return item?.getFlag?.(AKDP_MODULE_ID, CONTAINER_TYPE_FLAG) ?? item?.getFlag?.(FLAG_NS, CONTAINER_TYPE_FLAG) ?? null;
+}
+
+/**
  * Return the canonical slotType string for an item, or null. Checks the
  * legacy AWC flag first (old names remapped via SLOT_LEGACY_MAP), then the
- * native Equipment Type field.
+ * native Equipment Type field, then (for a Container, which has no native
+ * Equipment Type field at all) its AKDP-configured sub-type.
  */
 export function getItemSlot(item) {
   const raw = item.getFlag?.(FLAG_NS, "slotType") ?? item.system?.slotType ?? null;
   const normalised = raw ? (SLOT_LEGACY_MAP[raw] ?? raw) : null;
   if (normalised && SLOT_KEYS.includes(normalised)) return normalised;
+
+  if (item.type === "container") return CONTAINER_TYPE_SLOT_MAP[getContainerType(item)] ?? null;
 
   const nativeType = item.system?.type?.value ?? null;
   return SLOT_KEYS.includes(nativeType) ? nativeType : null;
@@ -153,11 +165,9 @@ export async function resolveSlotConflicts(actor, item) {
 }
 
 /**
- * @deprecated Kept for macro/backwards compatibility — delegates to
- * resolveSlotConflicts. The name is historical: actual conflict resolution
- * now happens post-commit from the updateItem hook (see hooks.js), not as a
- * pre-equip validation gate, because preUpdateItem handlers can't reliably
- * await async work before Foundry commits the change.
+ * @deprecated Kept for macro/backwards compatibility — delegates to resolveSlotConflicts,
+ * which runs post-commit from the updateItem hook (see hooks.js) since preUpdateItem
+ * handlers can't reliably await async work before Foundry commits the change.
  */
 export async function validateAndEquip(actor, item) {
   await resolveSlotConflicts(actor, item);

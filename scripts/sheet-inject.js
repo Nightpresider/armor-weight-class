@@ -16,6 +16,7 @@
 import { MODULE_ID, FLAG_NS, DEFAULT_BRACKETS } from "./constants.js";
 import { getACBreakdown } from "./ac.js";
 import { getItemSlot } from "./slots.js";
+import { isHandEligibleContainer } from "./paired-slots.js";
 import { reflowItemsList } from "./column-reflow.js";
 import { TARGET_SHAPE_PATTERN, buildTargetShapeSVG, INDIVIDUAL_TARGET_PATTERNS, buildIndividualTargetSVG } from "./target-icons.js";
 
@@ -72,6 +73,12 @@ export function injectCharacterSheetUI(app, html) {
 
   // ─── Inventory tab ───
   relocateInventoryCurrency(el);
+  try { injectContainersSection(el, actor, app); } catch (err) { console.error(`${LOG} injectContainersSection failed`, err); }
+  try { restyleInventorySubtitles(el, actor); } catch (err) { console.error(`${LOG} restyleInventorySubtitles failed`, err); }
+  try { injectActionBadgeColumn(el); } catch (err) { console.error(`${LOG} injectActionBadgeColumn failed`, err); }
+  try { styleChargesColumn(el); } catch (err) { console.error(`${LOG} styleChargesColumn failed`, err); }
+  try { renameQuantityColumnHeader(el); } catch (err) { console.error(`${LOG} renameQuantityColumnHeader failed`, err); }
+  try { wireQuantityKeyboardControls(el); } catch (err) { console.error(`${LOG} wireQuantityKeyboardControls failed`, err); }
   try { reflowItemsList(el, { listSelector: '.tab[data-tab="inventory"] .items-list' }); }
   catch (err) { console.error(`${LOG} reflowItemsList (inventory) failed`, err); }
 
@@ -87,20 +94,10 @@ export function injectCharacterSheetUI(app, html) {
   catch (err) { console.error(`${LOG} reflowItemsList (spells) failed`, err); }
 
   // ─── Sidebar-collapse-state-dependent relocations (Details/Inventory/Effects) ───
-  // dnd5e restores a persisted sidebar-collapsed/awc-sidebar-half state via its own
-  // force-call path (see hooks.js's _patchSidebarToggle comment) - that class update
-  // isn't guaranteed to have landed on `el` yet by the time this render hook fires, so
-  // relocateSearchAndAttunement/relocateConditionsIntoEffectsList (both mode-dependent)
-  // read it stale if called synchronously here. Deferred a frame, exactly like the
-  // click-triggered re-relocation already does elsewhere in this file
-  // (wireSidebarCollapseReflow / injectSidebarUncollapseButton's own listeners,
-  // same grouping) - by then the restored class is reliably in place.
-  // relocateToolsUnderSaves no longer reads sidebar state at all (see its own comment) so
-  // it isn't exposed to this race either way - left grouped here anyway, harmless.
-  //
-  // relocateConditionsIntoEffectsList must still run before the effects-tab reflow -
-  // the reflow packs whatever .items-section cards are currently in the DOM, so
-  // Conditions needs to already be moved in (Half/Collapsed) for it to be counted.
+  // Deferred a frame: dnd5e's persisted sidebar-collapsed/awc-sidebar-half class isn't
+  // guaranteed to have landed on `el` yet when this hook fires, so the mode-dependent
+  // relocations below would read it stale if called synchronously. Must run before the
+  // effects-tab reflow, which packs whatever .items-section cards are currently in the DOM.
   requestAnimationFrame(() => {
     try { relocateToolsUnderSaves(el); } catch (err) { console.error(`${LOG} relocateToolsUnderSaves failed`, err); }
     try { relocateSearchAndAttunement(el); } catch (err) { console.error(`${LOG} relocateSearchAndAttunement failed`, err); }
@@ -227,6 +224,169 @@ function hideNativeLozenges(el) {
 function stripFavoritesAttackText(el) {
   el.querySelectorAll(".favorites > ul .name-stacked .subtitle").forEach(node => {
     node.innerHTML = node.innerHTML.replace(/\s*\bAttack\b\s*/g, " ").trim();
+  });
+}
+
+/**
+ * dnd5e's own Inventory row subtitle is "{Item Type} • {Activation}" (e.g. "Weapon • Action",
+ * or just "Equipment" with no activation at all) - the type half always restates the section
+ * heading the row is already listed under ("Weapons"), so it's redundant and dropped entirely.
+ * The activation half becomes a small colored pulsing badge instead of spelling the word out -
+ * a green dot for Action, an orange triangle for Bonus Action - far more compact and scannable
+ * across a long list. Every row's own item.type drives the type-label match, so this works
+ * uniformly across every section without needing to know the section headings themselves.
+ *
+ * Guarded against re-running on its own output: a re-render that doesn't fully regenerate this
+ * row (dnd5e's Handlebars normally would, but a partial update might not) would otherwise feed
+ * an already-badged subtitle back through the "Action" regex, which - operating on the raw
+ * innerHTML string, not just visible text - matches inside the badge's own data-tooltip="Action"
+ * attribute value too, corrupting it into malformed HTML that spills out as garbled visible text.
+ */
+function restyleInventorySubtitles(el, actor) {
+  el.querySelectorAll('.tab[data-tab="inventory"] .items-list [data-item-id]').forEach(row => {
+    const subtitle = row.querySelector(".name-stacked .subtitle");
+    if (!subtitle || row.dataset.awcSubtitleCleaned) return;
+    const item = actor.items.get(row.dataset.itemId);
+    if (!item) return;
+
+    let html = subtitle.innerHTML;
+
+    const typeLabel = game.i18n.localize(CONFIG.Item.typeLabels[item.type] ?? "");
+    if (typeLabel) {
+      const escaped = typeLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      html = html.replace(new RegExp(`^\\s*${escaped}\\s*(?:•\\s*)?`, "i"), "");
+    }
+
+    // Detected here (from the raw subtitle text) and recorded on the row for
+    // injectActionBadgeColumn() to use - no longer inserted as a badge inline in the subtitle
+    // itself, which now just has the activation word stripped out entirely.
+    if (/\bBonus Action\b/i.test(html)) row.dataset.awcActivation = "bonus";
+    else if (/\bAction\b/i.test(html)) row.dataset.awcActivation = "action";
+    html = html.replace(/\s*\bBonus Action\b\s*|\s*\bAction\b\s*/gi, " ");
+
+    html = html.trim().replace(/^•\s*|\s*•$/g, "").trim();
+    row.dataset.awcSubtitleCleaned = "true";
+    if (!html) subtitle.remove();
+    else subtitle.innerHTML = html;
+  });
+}
+
+/**
+ * Gives the Action/Bonus Action indicator (detected from the subtitle text by
+ * restyleInventorySubtitles above, which strips it and records it as row.dataset.awcActivation)
+ * its own column between Name and Quantity, matching every other Inventory column's own
+ * convention (a fixed-width .item-header/.item-detail pair) instead of living inside the
+ * name-stacked block. Must run after restyleInventorySubtitles - a row it hasn't cleaned yet
+ * has nothing reliable recorded to read.
+ */
+function injectActionBadgeColumn(el) {
+  const CLASS = "item-action-badge";
+  const BADGE_HTML = {
+    action: '<span class="awc-activation-badge awc-activation-action" data-tooltip="Action"></span>',
+    bonus: '<span class="awc-activation-badge awc-activation-bonus" data-tooltip="Bonus Action"></span>',
+  };
+
+  el.querySelectorAll('.tab[data-tab="inventory"] .items-header').forEach(header => {
+    if (header.querySelector(`.${CLASS}`)) return;
+    const anchor = header.querySelector(".item-quantity");
+    const cell = document.createElement("div");
+    cell.classList.add("item-header", CLASS);
+    if (anchor) anchor.before(cell);
+    else header.appendChild(cell);
+  });
+
+  // Every row gets a cell (empty if no activation was detected, or the row never had a
+  // subtitle at all - e.g. AWC's own Containers section rows) so columns stay aligned with
+  // the header across every section, the same "empty but present" convention every other
+  // Inventory column already uses.
+  el.querySelectorAll('.tab[data-tab="inventory"] .items-list [data-item-id]').forEach(row => {
+    if (row.querySelector(`.${CLASS}`)) return;
+    const quantityCell = row.querySelector(".item-quantity");
+    if (!quantityCell) return;
+
+    const cell = document.createElement("div");
+    cell.classList.add("item-detail", CLASS);
+    cell.innerHTML = BADGE_HTML[row.dataset.awcActivation] ?? "";
+    quantityCell.before(cell);
+  });
+}
+
+/**
+ * Hides the Charges/Uses column entirely for a section where none of its items actually have
+ * charges (dnd5e still renders an empty placeholder cell in every row otherwise) and, when the
+ * column IS shown for a section, swaps its "Charges"/"Uses" text header for a battery-bolt
+ * glyph so it reads at a glance instead of needing to be spelled out. Row cells always use the
+ * literal class .item-uses regardless of which column ("charges" or "uses") the section is
+ * configured with - only the header cell's class reflects that (.item-charges/.item-uses) -
+ * so both header variants are checked but only .item-uses is ever checked on rows.
+ */
+function styleChargesColumn(el) {
+  const BATTERY_ICON = `<svg class="awc-charges-icon" viewBox="0 0 100 60" aria-hidden="true">
+    <path d="M40 6 L16 6 Q6 6 6 16 L6 26" />
+    <path d="M6 34 L6 44 Q6 54 16 54 L40 54" />
+    <path d="M60 6 L84 6 Q94 6 94 16 L94 26" />
+    <path d="M94 34 L94 44 Q94 54 84 54 L60 54" />
+    <path class="awc-charges-bolt" d="M56 4 L34 32 L48 32 L44 56 L66 26 L52 26 Z" />
+  </svg>`;
+
+  el.querySelectorAll('.tab[data-tab="inventory"] .items-section').forEach(section => {
+    const hasCharges = !!section.querySelector(".item-detail.item-uses:not(.empty)");
+    section.classList.toggle("awc-hide-charges", !hasCharges);
+    if (!hasCharges) return;
+
+    const header = section.querySelector(".items-header .item-charges, .items-header .item-uses");
+    if (header && !header.querySelector(".awc-charges-icon")) header.innerHTML = BATTERY_ICON;
+  });
+}
+
+/** Renames the native "Quantity" column header to "Qty" across every Inventory section. */
+function renameQuantityColumnHeader(el) {
+  el.querySelectorAll('.tab[data-tab="inventory"] .items-header .item-quantity').forEach(header => {
+    if (header.textContent.trim() !== "Qty") header.textContent = "Qty";
+  });
+}
+
+/**
+ * The Quantity column's +/- buttons are hidden everywhere on the Inventory tab (CSS,
+ * .item-quantity .adjustment-button), replaced by Up/Down arrow keys while focused in the
+ * number field - Up clicks the (still-functional, just invisible) increase button, Down the
+ * decrease one, reusing whatever handler already exists for each rather than reimplementing
+ * min-clamping/etc: dnd5e's own native wiring for native rows, this module's own hand-wired
+ * listener for the Containers section. Focusing a field also selects its whole value, so any
+ * typed digit overwrites it instead of inserting into it.
+ *
+ * Wired ONCE via event delegation on the sheet root (not per-row/per-render), so the only
+ * idempotency concern is not double-attaching this same delegated listener.
+ */
+function wireQuantityKeyboardControls(el) {
+  if (el._awcQuantityKeysWired) return;
+  el._awcQuantityKeysWired = true;
+
+  const QTY_SELECTOR = '.tab[data-tab="inventory"] .item-quantity input[data-name="system.quantity"]';
+
+  let justFocused = null;
+  el.addEventListener("focusin", event => {
+    const input = event.target.closest(QTY_SELECTOR);
+    if (!input) return;
+    justFocused = input;
+    input.select();
+  });
+
+  // A mouse click that both focuses the input AND positions the cursor would otherwise
+  // collapse the selection .select() just made, on this same interaction's mouseup - skip the
+  // browser's own default cursor-placement for that one mouseup so the selection sticks.
+  el.addEventListener("mouseup", event => {
+    if (justFocused && event.target === justFocused) event.preventDefault();
+    justFocused = null;
+  });
+
+  el.addEventListener("keydown", event => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const input = event.target.closest(QTY_SELECTOR);
+    if (!input) return;
+    event.preventDefault();
+    const action = event.key === "ArrowUp" ? "increase" : "decrease";
+    input.closest(".item-quantity")?.querySelector(`.adjustment-button[data-action="${action}"]`)?.click();
   });
 }
 
@@ -628,14 +788,19 @@ function injectCalcBar(el, cap) {
 // ─── Sheet ↔ Doll synchronization ───────────────────────────────────────────
 
 /**
- * True for any item the Paper Doll shows on the actor's doll instead of
- * the inventory list: any resolvable AWC slot sub-type (armor/clothing/
- * jewelry, including ring), or an equipped weapon (hand-slot or Exempt).
+ * True for any item the Paper Doll shows somewhere other than the inventory list: any
+ * resolvable AWC slot sub-type (armor/clothing/jewelry, including ring), an equipped weapon
+ * (hand-slot or Exempt), an equipped hand-eligible Container (Keg/Bobble - same hand-slot
+ * system as weapons), or an item currently pocketed in some other equipped item's pockets
+ * (revealed via the pocket viewer/picker instead, never equipped in the dnd5e sense at all -
+ * see paired-slots.js's pocketItem()).
  */
 function isDollManaged(item) {
+  if (item.getFlag(FLAG_NS, "pocketedIn")) return true;
   if (!item.system?.equipped) return false;
   if (getItemSlot(item)) return true;
   if (item.type === "weapon") return true;
+  if (isHandEligibleContainer(item)) return true;
   return false;
 }
 
@@ -846,11 +1011,8 @@ export function injectMovementPillsGroup(el, actor) {
  * sidebar mode — Skills' own list is just much taller than Saving Throws regardless of
  * column width, so moving Tools there keeps the shorter Saves column pulling its weight
  * instead of padding out the already-taller Skills column further, cutting how much
- * scrolling the tab needs overall. (Previously gated on sidebar-collapsed on the theory that
- * only a collapsed sidebar frees enough width to matter — but the imbalance being fixed here
- * is height, not width, so that gate excluded Full/Half mode for no real reason. Dropping it
- * also removes this function's own dependency on reading the collapse-state class at all, so
- * it's no longer exposed to that state's own restore-timing race either.)
+ * scrolling the tab needs overall. Applies in every sidebar mode - the imbalance being fixed is
+ * height, not width, so it isn't specific to a collapsed sidebar.
  *
  * A real DOM move, since CSS can't cross .left/.right's separate flex contexts; safe to
  * rerun every render since .after() no-ops when already in position.
@@ -870,10 +1032,12 @@ function relocateToolsUnderSaves(el) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Moves the Inventory tab's currency row into .top .containers' spot — a
- * native "equipped containers" strip that's dead here since the Paper
- * Doll handles bag/pouch equipping. .containers is hidden, not removed
- * (same pattern as hideNativeLozenges).
+ * Moves the Inventory tab's currency row into .top .containers' spot — dnd5e's own tiny
+ * icon-strip display for "container" type items (backpacks/pouches/vials with actual
+ * Contents/capacity tracking — a wholly separate dnd5e concept from AWC's own equippable
+ * backpack/belt/purse slots). Hidden here rather than removed (same pattern as
+ * hideNativeLozenges) since injectContainersSection() below replaces its job with a proper
+ * list-style section instead of this compact strip.
  *
  * Moves the EXISTING .currency node, not a rebuilt copy, so its wired
  * input listeners stay intact. Safe every render since .currency
@@ -888,6 +1052,185 @@ function relocateInventoryCurrency(el) {
   containers.style.display = "none";
   top.appendChild(currency);
 }
+
+/** A container not currently shown on the doll (see isDollManaged above) — either it has no
+ *  AWC slot association at all, or it does but isn't equipped right now. Either way it has
+ *  no visible representation elsewhere, so it needs to show up here. */
+function isUnmanagedContainer(item) {
+  return item.type === "container" && !isDollManaged(item);
+}
+
+function itemWeightValue(item) {
+  const weight = item.system?.weight;
+  if (typeof weight === "number") return weight;
+  return weight?.value ?? 0;
+}
+
+/**
+ * Builds a proper "Containers" section — same items-section/items-header/item-list markup
+ * and CSS classes dnd5e's own Equipment/Consumables sections use (read directly from
+ * systems/dnd5e/templates/inventory/inventory.hbs), so it's visually identical. Despite
+ * carrying the exact same data-action attributes dnd5e's own rendered rows do, none of them
+ * are wired "for free": dnd5e's <dnd5e-inventory> custom element attaches its click listeners
+ * with a one-time, non-delegated querySelectorAll() scan in its connectedCallback (dnd5e.mjs),
+ * guarded to run only once per render - it already ran before this section is inserted, so it
+ * never sees these buttons. Every interactive control below (view/edit/delete/quantity) is
+ * wired by hand here instead. The context-menu ("...") button is left unwired - out of scope,
+ * not a simple one-off action to replicate.
+ *
+ * Only lists containers isUnmanagedContainer() doesn't exclude — one already shown on the
+ * doll (an AWC-slotted, equipped container) isn't duplicated here.
+ */
+function injectContainersSection(el, actor, app) {
+  el.querySelector(".awc-containers-section")?.remove();
+
+  const containers = actor.items.filter(isUnmanagedContainer);
+  if (!containers.length) return;
+
+  const list = el.querySelector('.tab[data-tab="inventory"] .items-list');
+  if (!list) return;
+
+  // Matches dnd5e's own controls.hbs: edit/delete only in Edit Mode, an Equip toggle in Play
+  // Mode instead (containers, like any physical item, carry system.equipped).
+  const editMode = !!app?.isEditMode;
+
+  const rows = containers.map(item => `
+    <li class="item" data-uuid="${item.uuid}" data-item-id="${item.id}"
+        data-entry-id="${item.id}" data-item-name="${item.name}">
+      <div class="item-row draggable">
+        <div class="item-name item-action item-tooltip rollable" role="button" data-action="view"
+             aria-label="${item.name}">
+          <img class="item-image gold-icon" src="${item.img}" alt="${item.name}" draggable="false">
+          <div class="name name-stacked">
+            <span class="title">${item.name}</span>
+          </div>
+        </div>
+        <div class="item-detail item-quantity" data-column-id="quantity">
+          <a class="adjustment-button always-interactive" data-action="decrease" data-property="system.quantity">
+            <i class="fa-solid fa-minus" inert></i>
+          </a>
+          <input type="text" class="always-interactive" value="${item.system.quantity ?? 1}" placeholder="0"
+                 data-dtype="Number" data-name="system.quantity" inputmode="numeric" pattern="^[+=\\-]?\\d*"
+                 min="0" aria-label="${game.i18n.localize("DND5E.Quantity")}">
+          <a class="adjustment-button always-interactive" data-action="increase" data-property="system.quantity">
+            <i class="fa-solid fa-plus" inert></i>
+          </a>
+        </div>
+        <div class="item-detail item-weight" data-column-id="weight">
+          <i class="fa-solid fa-weight-hanging" inert></i> ${itemWeightValue(item)}
+        </div>
+        <div class="item-detail item-controls always-visible" data-column-id="controls">
+          ${editMode ? `
+          <button type="button" class="unbutton config-button item-control item-action" data-action="edit"
+                  data-tooltip aria-label="${game.i18n.localize("DND5E.ItemEdit")}">
+            <i class="fa-solid fa-pen-to-square" inert></i>
+          </button>
+          <button type="button" class="unbutton config-button item-control item-action" data-action="delete"
+                  data-tooltip aria-label="${game.i18n.localize("DND5E.ItemDelete")}">
+            <i class="fa-solid fa-trash" inert></i>
+          </button>
+          ` : `
+          <button type="button" class="unbutton config-button item-control item-action" data-action="equip"
+                  data-tooltip aria-label="${item.system.equipped ? "Unequip" : "Equip"}">
+            <i class="fa-solid fa-shield-halved" inert></i>
+          </button>
+          `}
+          <button type="button" class="unbutton config-button item-control always-interactive" data-context-menu
+                  aria-label="${game.i18n.localize("DND5E.AdditionalControls")}">
+            <i class="fa-solid fa-ellipsis-vertical" inert></i>
+          </button>
+        </div>
+      </div>
+    </li>
+  `).join("");
+
+  const sectionHTML = `
+    <div class="items-section card awc-containers-section">
+      <div class="items-header header">
+        <h3 class="item-name">Containers</h3>
+        <div class="item-header item-quantity" data-column-id="quantity">${game.i18n.localize("DND5E.Quantity")}</div>
+        <div class="item-header item-weight" data-column-id="weight">${game.i18n.localize("DND5E.Weight")}</div>
+        <div class="item-header item-controls" data-column-id="controls"></div>
+      </div>
+      <ol class="item-list unlist">${rows}</ol>
+    </div>
+  `;
+
+  list.insertAdjacentHTML("beforeend", sectionHTML);
+
+  list.querySelectorAll(".awc-containers-section .item").forEach(row => {
+    const item = actor.items.get(row.dataset.itemId);
+    if (!item) return;
+
+    // dnd5e's real rows get their draggable attribute + dragstart wiring from a DragDrop
+    // instance bound once during the sheet's own _onRender (dragSelector: ".draggable"), which
+    // already ran by the time this section is inserted - the "draggable" CLASS on .item-row
+    // is just the selector it would have matched, it does nothing on its own here. Replicate
+    // it manually: mark the row draggable and populate dataTransfer with the standard
+    // {type, uuid} Document-drag payload every drop target (including AWC's own doll) expects.
+    // registerAwcContainerDrag (below) additionally flags this specific drag so a drop that
+    // misses every real target gets treated as a cancel rather than dnd5e's own inventory drop
+    // handler mistaking it for a "copy this item onto the sheet" gesture - see its own comment.
+    const dragRow = row.querySelector(".item-row.draggable");
+    if (dragRow) {
+      dragRow.setAttribute("draggable", "true");
+      dragRow.addEventListener("dragstart", event => {
+        registerAwcContainerDrag();
+        event.dataTransfer.setData("text/plain", JSON.stringify({ type: "Item", uuid: item.uuid }));
+      });
+    }
+
+    // Wired by hand - see this function's docblock for why dnd5e's own delegated handling
+    // never reaches these (InventoryElement's one-time connectedCallback scan already ran).
+    row.querySelector('[data-action="view"]')?.addEventListener("click", () => item.sheet?.render(true));
+    row.querySelector('[data-action="edit"]')?.addEventListener("click", () => item.sheet?.render(true));
+    row.querySelector('[data-action="delete"]')?.addEventListener("click", () => item.deleteDialog());
+    row.querySelector('[data-action="equip"]')?.addEventListener("click", () =>
+      item.update({ "system.equipped": !item.system.equipped }));
+    row.querySelector('[data-action="decrease"]')?.addEventListener("click", () =>
+      item.update({ "system.quantity": Math.max(0, (item.system.quantity ?? 1) - 1) }));
+    row.querySelector('[data-action="increase"]')?.addEventListener("click", () =>
+      item.update({ "system.quantity": (item.system.quantity ?? 1) + 1 }));
+    const qtyInput = row.querySelector('input[data-name="system.quantity"]');
+    qtyInput?.addEventListener("change", () => {
+      const value = Number(qtyInput.value);
+      if (Number.isFinite(value)) item.update({ "system.quantity": Math.max(0, value) });
+    });
+  });
+}
+
+// ─── AWC-injected-row drag safety net ──────────────────────────────────────
+// dnd5e's own drop handler decides "reorder in place" vs. "create a new copy of this item"
+// based on a drag-effect value ("move" vs "copy") it tracks internally per-drag, populated
+// from a private cache only its OWN dragstart wiring writes to. A drag started from one of
+// this module's own hand-wired rows (the Containers section above) never touches that cache,
+// so dnd5e's calculation silently falls back to "copy" for the whole drag - dropping the item
+// back anywhere on the actor sheet other than a real AWC target (the doll) then creates a
+// duplicate instead of doing nothing, since dnd5e's own handler takes that as "user wants a
+// new copy of this item here". There's no way to write into dnd5e's private cache from outside
+// its class, so instead: track whether the CURRENT drag started on one of these rows, and if
+// so, swallow a drop that lands anywhere but the doll in the capture phase - before dnd5e's own
+// (later, non-capture) drop handler ever sees it - so it reads as a plain cancelled drag
+// (nothing happens, matching every other drag-and-drop gesture in Foundry) instead of a copy.
+let awcContainerDragActive = false;
+
+function registerAwcContainerDrag() {
+  awcContainerDragActive = true;
+}
+
+document.addEventListener("dragend", () => { awcContainerDragActive = false; }, true);
+
+document.addEventListener("drop", event => {
+  if (!awcContainerDragActive) return;
+  awcContainerDragActive = false;
+  // Real AWC targets: the doll itself, or any of its own popups (the equip-picker, a pocket
+  // viewer/picker, or drag-highlight.js's own drag-revealed pocket window) - these last ones
+  // are appended straight to document.body, not nested inside .awc-doll-content, so both have
+  // to be checked or a drop onto an open pocket window would get wrongly swallowed here too.
+  if (event.target.closest?.(".awc-doll-content, .awc-doll-picker")) return;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
 
 /**
  * Moves the search bar and attunement box (normally .middle's own row

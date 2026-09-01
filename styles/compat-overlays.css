@@ -1,16 +1,8 @@
 /* ================================================================
    Armor Weight Class — Third-Party Compatibility Overlays
-   compat-image-hover.js: the full Paper Doll (paper-doll.hbs, reused verbatim)
-   overlaid on Image Hover's popup - paper-doll.css already styles every
-   .awc-doll-* class module-wide, so only container sizing/positioning lives here.
-   compat-combat-tracker-dock.js: an always-visible stat readout overlaid on each
-   Carousel Combat Tracker portrait, plus styling for the tooltip that module's own
-   compat file rebuilds from scratch (name + equipped items, replacing CCT's own
-   tooltip content - CCT's own .combat-dock-tooltip-wrapper CSS doesn't target our
-   replacement markup, so this styles it from nothing rather than half-relying on it).
    ================================================================ */
 
-/* ── Image Hover: full Paper Doll overlay ──────────────────────────────────────── */
+/* ── Image Hover ── */
 
 .awc-image-hover-doll {
   position: absolute;
@@ -41,7 +33,7 @@
   display: none;
 }
 
-/* ── Carousel Combat Tracker: always-visible stat readout on the card face ──── */
+/* ── Carousel Combat Tracker ── */
 
 .awc-combatant-stats {
   position: absolute;
@@ -64,7 +56,7 @@
   text-align: center;
 }
 
-/* ── Carousel Combat Tracker: rebuilt tooltip (name + equipped items) ────────── */
+/* ── Tooltip ── */
 
 .awc-equipped-tooltip h3 {
   margin: 0 0 4px;

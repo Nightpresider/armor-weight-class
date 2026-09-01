@@ -39,24 +39,14 @@ body.theme-light .dnd5e2.sheet.actor.character {
      1.3px  1.3px 1.3px rgba(255,255,255,0.9);
 }
 
-/* Elements that sit on their own dark/colored badge or banner - not directly on the
-   sheet's light parchment - keep the dark-theme black outline in light theme too, since
-   that's what still reads as an outline there; the white flip above is only right for
-   text sitting on the light parchment itself:
-     - .level-badge: the initiative badge (native class, repurposed by sheet-inject.js),
-       its own gold-toned badge background regardless of theme.
-     - .ability-score .score: just the raw score number (e.g. "13"), always on its own
-       small dark rectangle regardless of theme. The pentagon around it (.label/.mod -
-       "STR"/"+1") is dark text directly on the light parchment pentagon shape, not a
-       dark badge, so those two correctly keep the white flip.
-     - .card .header: the section title bars (Inventory/Features/Spells/Effects tab
-       headers, e.g. "Other Features" / "USES" / "RECOVERY"), always white text on a
-       colored gradient (dnd5e.css's own .dnd5e2 .card .header rule, color: white,
-       unconditional on theme) - the white flip here just doubled up as a blurry halo.
-     - .ac-badge: the native AC number sitting on its own shield badge in front of the
-       paper doll portrait, same reasoning as the others - fixed badge, not parchment.
-   Add further exceptions here following the same reasoning: is this text sitting on a
-   fixed-color badge/banner rather than the sheet's own light/dark background? */
+/* Elements sitting on their own dark/colored badge or banner (not directly on the sheet's
+   light parchment) keep the dark-theme black outline in light theme too - the white flip
+   above is only right for text on the parchment itself. .level-badge and .ac-badge sit on
+   fixed-color badges regardless of theme; .ability-score .score sits on its own dark
+   rectangle (unlike its sibling .label/.mod, which IS on the light parchment pentagon and
+   correctly keeps the white flip); .card .header is always white-on-gradient per dnd5e's own
+   rule. Add further exceptions here under the same test: fixed-color badge/banner, or the
+   sheet's own light/dark background? */
 body.theme-light .dnd5e2.sheet.actor.character :is(.level-badge, .ability-score .score, .card .header, .ac-badge) {
   text-shadow:
     -1.3px -1.3px 1.3px rgba(0,0,0,0.9),
@@ -296,8 +286,7 @@ body.theme-light .dnd5e2.sheet.actor.character :is(.level-badge, .ability-score 
   top: 0;
   bottom: 0;
   width: 2px;
-  /* Was a fixed blue (#5ba3d9) - now gold by default, matching the calc-bar's own
-     border, and tracks the same --akd-border-color override for the same reason. */
+  /* Matches the calc-bar's own border; tracks the same --akd-border-color override. */
   background: var(--akd-border-color, var(--dnd5e-color-gold));
   transform: translateX(-50%);
   pointer-events: all;
@@ -885,6 +874,174 @@ body.theme-light .dnd5e2.sheet.actor.character :is(.level-badge, .ability-score 
 
 /* ── Full / all modes ── */
 
+/* COLUMN GAP — neither dnd5e's .items-header nor .item-row declares any gap at all; columns
+   sit flush edge-to-edge relying purely on their own padding. Guarantees at least a hairline
+   of separation everywhere, regardless of how tightly the widths below get packed. */
+.tab[data-tab="inventory"] .items-section .items-header,
+.tab[data-tab="inventory"] .items-section .item .item-row {
+  gap: 1px;
+}
+
+/* ACTIVATION BADGES — replaces the "Action"/"Bonus Action" words dnd5e's own row subtitle
+   would otherwise show with a small colored pulsing shape instead, given its own column
+   between Name and Quantity (sheet-inject.js's injectActionBadgeColumn) rather than sitting
+   inline in the name-stacked block (restyleInventorySubtitles strips the words out there). */
+
+.dnd5e2 .items-section .items-header .item-action-badge,
+.dnd5e2 .items-section .item .item-action-badge {
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* QUANTITY COLUMN — 70px natively, sized for the "− [input] +" trio this session already
+   hides via CSS (wireQuantityKeyboardControls / the display:none rule above). With those
+   gone, the column only ever holds a bare 1-3 digit number. */
+.tab[data-tab="inventory"] .items-section .items-header .item-quantity,
+.tab[data-tab="inventory"] .items-section .item .item-quantity {
+  width: 32px;
+}
+
+/* ROLL COLUMN — 40px natively for a short formatted modifier ("+5", "+12" at most). */
+.tab[data-tab="inventory"] .items-section .items-header .item-roll,
+.tab[data-tab="inventory"] .items-section .item .item-roll {
+  width: 28px;
+}
+
+/* FORMULA COLUMN — 80px natively; the damage-type icon is now a background watermark (AKDP's
+   damageTypeCardColors.mjs) that doesn't add to the row's footprint, so this only needs to
+   fit the two-line "1d8 / +3" text itself. */
+.tab[data-tab="inventory"] .items-section .items-header .item-formula,
+.tab[data-tab="inventory"] .items-section .item .item-formula {
+  width: 70px;
+}
+
+/* CONTROLS COLUMN — dnd5e reserves 38px of its 70px width purely for the expand/collapse and
+   "⋮" context-menu buttons, which are position:absolute (anchored to the column's own right
+   edge, not normal-flow siblings) - the equip/attune/prepare icon sits in normal flow in the
+   remaining ~28px instead, which is what creates the visibly bigger gap before those two vs.
+   the tight gap between them. Both reserved zone and total width tightened here (their
+   right-anchoring is relative to this same column, so shrinking it moves both icons inward
+   automatically, closing that gap) - scoped to the Inventory tab only, so the compendium
+   browser and other item lists that reuse the same classes elsewhere are unaffected. This is
+   the main space reclaimed to stop rows wrapping (and the columns after them misaligning) once
+   things get crunched in Full sidebar mode's narrower content column. */
+.tab[data-tab="inventory"] .items-section .items-header .item-controls,
+.tab[data-tab="inventory"] .items-section .item .item-controls {
+  width: 56px;
+  padding-right: 24px;
+}
+
+/* Equip/attune/prepare icon only (not the expand/⋮ icons, which are absolutely anchored to the
+   column's own right edge and unaffected by this) - nudged 1px left to even out its spacing
+   between the Name column and the expand icon next to it. transform so it can't affect layout
+   or push any sibling. */
+.tab[data-tab="inventory"] .items-section .item .item-controls .item-control[data-action="equip"],
+.tab[data-tab="inventory"] .items-section .item .item-controls .item-control[data-action="attune"],
+.tab[data-tab="inventory"] .items-section .item .item-controls .item-control[data-action="prepare"] {
+  transform: translateX(-1px);
+}
+
+/* Edit mode swaps the equip/attune/prepare icon for Edit/Delete buttons (dnd5e's own
+   controls.hbs), but the expand/collapse chevron renders unconditionally either way - hidden
+   here in edit mode since editing is done via the item's own sheet, not the inline summary.
+   .editable is dnd5e's own edit-mode class on the sheet root. */
+.dnd5e2.editable .tab[data-tab="inventory"] .items-section .item .item-controls [data-toggle-description] {
+  display: none;
+}
+
+/* CHARGES COLUMN — 70px wide natively, justify-content:space-evenly (dnd5e's .item-charges/
+   .item-uses share that rule with .item-quantity), sized for a "value / max" pair with padding
+   on both sides. Row cells always carry the literal class .item-uses regardless of which column
+   ("charges" or "uses") the section is configured with - only the header cell's class reflects
+   that - so both must be targeted or rows silently keep dnd5e's native wide layout underneath.
+   Narrowed to fit its actual content (double-digit charge totals are effectively never seen)
+   and re-centered instead of space-evenly, same Inventory-tab-only scope as the controls fix
+   above. */
+.tab[data-tab="inventory"] .items-section .items-header .item-charges,
+.tab[data-tab="inventory"] .items-section .item .item-charges,
+.tab[data-tab="inventory"] .items-section .items-header .item-uses,
+.tab[data-tab="inventory"] .items-section .item .item-uses {
+  width: 24px;
+  justify-content: center;
+}
+
+/* Hides the Charges/Uses column entirely for a section where no item has charges
+   (styleChargesColumn in sheet-inject.js toggles this class per section, per render). */
+.tab[data-tab="inventory"] .items-section.awc-hide-charges .item-header.item-charges,
+.tab[data-tab="inventory"] .items-section.awc-hide-charges .item-header.item-uses,
+.tab[data-tab="inventory"] .items-section.awc-hide-charges .item .item-detail.item-uses {
+  display: none;
+}
+
+/* Battery-bolt glyph replacing the "Charges"/"Uses" text header (styleChargesColumn). Brackets
+   stroked, bolt filled, both via currentColor so they inherit the header's own text color. */
+.tab[data-tab="inventory"] .items-header .item-charges,
+.tab[data-tab="inventory"] .items-header .item-uses {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.awc-charges-icon {
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.awc-charges-icon .awc-charges-bolt {
+  fill: currentColor;
+  stroke: none;
+}
+
+.awc-activation-badge {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 1px;
+}
+
+.awc-activation-action {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3ddc5a;
+  animation: awc-activation-pulse-action 1.6s ease-in-out infinite;
+}
+
+.awc-activation-bonus {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid #ff9d2e;
+  animation: awc-activation-pulse-bonus 1.6s ease-in-out infinite;
+}
+
+@keyframes awc-activation-pulse-action {
+  0%, 100% { box-shadow: 0 0 2px 0 rgba(61, 220, 90, 0.9); }
+  50% { box-shadow: 0 0 6px 3px rgba(61, 220, 90, 0.55); }
+}
+
+@keyframes awc-activation-pulse-bonus {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(255, 157, 46, 0.9)); }
+  50% { filter: drop-shadow(0 0 4px rgba(255, 157, 46, 0.65)); }
+}
+
+/* QUANTITY +/- BUTTONS — hidden everywhere on the Inventory tab (native rows and AWC's own
+   Containers section alike); still fully functional, just triggered via Up/Down arrow keys
+   instead (sheet-inject.js's wireQuantityKeyboardControls calls the same hidden button's own
+   .click()). Scoped to .item-quantity specifically - .adjustment-button is also used
+   (unrelated) by encounter member / vehicle crew rows, which must stay untouched. */
+.tab[data-tab="inventory"] .item-quantity .adjustment-button {
+  display: none;
+}
+
 /* CURRENCY Pills — relocated up next to the encumbrance bar. */
 
 .dnd5e2.sheet.actor.character .tab[data-tab="inventory"] .top .currency {
@@ -1095,17 +1252,12 @@ body.theme-light .dnd5e2.sheet.actor.character :is(.level-badge, .ability-score 
   color: inherit;
 }
 
-/* Narrows the Roll/Uses/Charges/Formula columns. */
+/* Narrows the Roll/Formula columns. Uses/Charges width+justify-content is owned solely by the
+   Inventory-tab-scoped rule above (this block's 8-class selector would otherwise out-specificity
+   that 5-class one and win instead). */
 .dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-roll,
 .dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-roll {
   width: 20px;
-}
-
-.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-uses,
-.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-uses,
-.dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-charges,
-.dnd5e2.sheet.actor.character .sheet-body .items-section .item .item-charges {
-  width: 35px;
 }
 
 .dnd5e2.sheet.actor.character .sheet-body .items-section .items-header .item-formula,

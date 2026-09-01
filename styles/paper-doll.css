@@ -8,6 +8,13 @@
   --awc-doll-gap: 0.3rem;
   --awc-doll-main-color: #191005;
   --awc-doll-brightness: 55%;
+  /* Fixed reference size for the inventory-picker/pocket-window popups on the character-sheet
+     embedded doll - same value Half mode's own sockets use (see the Half-mode override
+     further down), applied uniformly in Full mode too rather than tracking whichever
+     --awc-doll-slot-size is ambient. Popups render detached to document.body (see
+     positionPickerAboveSlot), outside the sidebar's own scoped --awc-doll-slot-size override,
+     so they need their own explicit reference rather than inheriting one. */
+  --awc-doll-picker-slot-size: 26.45px; /* Half mode's 23px socket size, +15% */
 }
 
 /* ================================================================
@@ -109,6 +116,17 @@
   opacity: 0.6;
 }
 
+/* filter applies to an element's box-shadow too, not just its own content - an empty slot's
+   sepia(1) desaturates the drop-eligibility pulse's red/yellow/green toward brown, and
+   opacity:0.6 dims it further, on top of an already brownish base tone. Resets both while a
+   slot is showing as a valid drop target so the glow renders at its true color/opacity. */
+.awc-doll-slot.awc-doll-empty.awc-doll-drop-occupied,
+.awc-doll-slot.awc-doll-empty.awc-doll-drop-empty,
+.awc-doll-slot.awc-doll-empty.awc-doll-drop-target {
+  filter: none;
+  opacity: 1;
+}
+
 .awc-doll-slot i {
   pointer-events: none;
   font-size: 1.1rem;
@@ -160,6 +178,38 @@
    center-row slots are smaller. */
 .awc-doll-center-exempt .awc-doll-slot {
   width: var(--awc-doll-slot-size);
+}
+
+.awc-doll-ranged-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--awc-doll-gap);
+}
+
+/* Quiver stays full-size like Exempt, directly above the Ranged pair it feeds. */
+.awc-doll-quiver-row .awc-doll-slot {
+  width: var(--awc-doll-slot-size);
+}
+
+/* A ranged weapon is equipped but the Quiver is empty - reuses awc-pulse-occupied's red
+   (defined below) as a persistent "needs attention" state, not just a drag-hover one. */
+.awc-doll-quiver-slot.awc-doll-quiver-needs-ammo {
+  animation: awc-pulse-occupied 1.4s ease-in-out infinite;
+}
+
+/* Ammo count, scaling with the slot itself so it reads consistently across
+   Full/Half/pop-out (--awc-doll-slot-size is set differently in each). */
+.awc-doll-quiver-qty {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-size: calc(var(--awc-doll-slot-size) * 0.22);
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  text-shadow: -1px -1px 1px #000, 1px -1px 1px #000, -1px 1px 1px #000, 1px 1px 1px #000;
+  pointer-events: none;
 }
 
 .awc-doll-config-panel {
@@ -225,9 +275,12 @@
   color: #fff;
 }
 
+/* Icon-grid popups (the equip-picker, and the pocket viewer/picker's own slot grid) wrap at 3
+   columns regardless of available width - .awc-doll-attack-picker overrides this back to a
+   single-column text list for the attack-mode/combined popups, which don't use this grid. */
 .awc-doll-picker {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
   gap: 0.3rem;
   padding: 0.4rem;
   background: rgba(0, 0, 0, 0.75);
@@ -236,8 +289,94 @@
   max-width: 100%;
 }
 
+/* Smaller than a doll slot - used both for the equip-picker's own icon grid (_showPicker) and
+   the pocket window's fixed-capacity slot grid (renderPocketSlots), so a popup with several
+   options doesn't grow as large as the doll itself. */
 .awc-doll-picker-item {
   cursor: pointer;
+  width: calc(var(--awc-doll-slot-size) * 0.6);
+}
+
+/* An unfilled pocket slot (renderPocketSlots) - no image, not interactive by default. */
+.awc-doll-picker-item-empty {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Click-to-fill (renderPocketSlots' onEmptyClick, showPocketFillPicker) - still the dim empty
+   look, but a pointer cursor invites the click, matching an empty doll slot's own picker. */
+.awc-doll-picker-item-empty.awc-doll-picker-item-clickable {
+  cursor: pointer;
+}
+
+/* Full opacity while a drag-revealed pocket slot (openDragPocketWindow) is actively
+   highlighted, same reasoning as the main doll's own .awc-doll-empty override below - dimming
+   would otherwise wash out the red/yellow/green drop pulse on an empty slot. */
+.awc-doll-picker-item-empty.awc-doll-drop-occupied,
+.awc-doll-picker-item-empty.awc-doll-drop-empty,
+.awc-doll-picker-item-empty.awc-doll-drop-target {
+  opacity: 1;
+}
+
+/* Character-sheet-embedded doll's own popups (doll-embed.js) - fixed to Half mode's socket
+   size in both Full and Half, rather than the pop-out window's larger --awc-doll-slot-size.
+   Tight 1px gap, no border, and no surrounding backdrop box, unlike the base .awc-doll-picker
+   above - each socket already carries its own background via the shared .awc-doll-slot rule
+   (same darkness/transparency as the doll's own slots), so nothing extra is needed around them. */
+.awc-doll-picker-embedded {
+  gap: 1px;
+  border: none;
+  background: none;
+}
+
+.awc-doll-picker-embedded .awc-doll-picker-item {
+  width: calc(var(--awc-doll-picker-slot-size) * 0.6);
+}
+
+/* Full sidebar mode only (not Half) - 4px larger than the shared embedded size above. */
+.awc-doll-picker-full .awc-doll-picker-item {
+  width: calc(var(--awc-doll-picker-slot-size) * 0.6 + 4px);
+}
+
+/* Attack-mode popup (paper-doll-app.js's _appendAttackModeOptions) - text options in a single
+   column instead of the equip-picker's 3-column item-icon grid, same dark ridge-bordered box. */
+.awc-doll-attack-picker {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  min-width: 8rem;
+}
+
+/* Pocketed-items icon grid nested inside the combined attack+pocket popup
+   (_showPocketPicker) - its own 3-column grid, independent of the column
+   layout .awc-doll-attack-picker gives the text options above it. */
+.awc-doll-pocket-row {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 1px;
+}
+
+.awc-doll-attack-option {
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+  color: var(--color-text-light-6, #ccc);
+  border-radius: 3px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.awc-doll-pocket-empty,
+.awc-doll-pocket-empty:hover {
+  cursor: default;
+  font-style: italic;
+  opacity: 0.6;
+  background: none;
+  color: var(--color-text-light-6, #ccc);
+}
+
+.awc-doll-attack-option:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
 /* ── Lower section: Exempt+Ring group, then the hand-slot pairs ─── */
@@ -276,6 +415,47 @@
    blocked rather than just empty. */
 .awc-doll-hand-slot.awc-doll-faded {
   opacity: 0.25;
+}
+
+/* Drag-drop eligibility highlight (drag-highlight.js) - AWC's own copy of
+   a-knights-dream-properties's akd-pulse-warning animation, namespaced
+   separately since that's a sibling module. Cleared explicitly on dragend -
+   the doll's slot DOM nodes are long-lived, unlike AKDP's own re-render-
+   driven usage.
+   Uniform meaning everywhere a slot can accept a drop (plain hand/ring/armor
+   slots and pocket carriers alike): red = occupied, dropping here swaps out
+   the current occupant; yellow = empty, dropping here is a plain fill. */
+@keyframes awc-pulse-occupied {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 60, 60, 0.75); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 60, 60, 0); }
+}
+
+.awc-doll-slot.awc-doll-drop-occupied {
+  animation: awc-pulse-occupied 1.4s ease-in-out infinite;
+}
+
+@keyframes awc-pulse-empty {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(230, 200, 40, 0.75); }
+  50% { box-shadow: 0 0 0 6px rgba(230, 200, 40, 0); }
+}
+
+.awc-doll-slot.awc-doll-drop-empty {
+  animation: awc-pulse-empty 1.4s ease-in-out infinite;
+}
+
+/* With two or more slots eligible at once (e.g. a Light weapon's Main and Secondary hand),
+   whichever one is currently nearest the cursor (drag-highlight.js's proximity tracking)
+   overrides its red/yellow state with this green pulse, showing exactly where the drop would
+   land. Higher specificity (3 classes) than the plain occupied/empty rules wins whenever
+   either is also present. */
+@keyframes awc-pulse-target {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(60, 220, 90, 0.75); }
+  50% { box-shadow: 0 0 0 6px rgba(60, 220, 90, 0); }
+}
+
+.awc-doll-slot.awc-doll-drop-occupied.awc-doll-drop-target,
+.awc-doll-slot.awc-doll-drop-empty.awc-doll-drop-target {
+  animation: awc-pulse-target 1.4s ease-in-out infinite;
 }
 
 /* ── Tooltip ────────────────────────────────────────────────────── */
@@ -433,6 +613,16 @@
 
 .dnd5e2.sheet.actor.character .sheet-body .sidebar .card .stats .lozenges + .meter-group {
   margin-top: 20px;
+}
+
+/* ── Doll centerTop row (backpack/belt/purse) ──────────────────────
+   Shares the Lozenges row's near-top band (both pulled onto the doll
+   art) and loses the paint order to it - .stats' translateZ(3px) beats
+   this row's default (unstacked) paint order. Fixed with z-index alone
+   (a flex item, so this works without position:relative) - the row
+   stays exactly where it renders, just in front instead of buried. */
+.dnd5e2.sheet.actor.character .sheet-body .sidebar .card .portrait.awc-doll-embedded .awc-doll-center-row.awc-doll-center-top {
+  z-index: 4;
 }
 
 /* ── HP/HD bars ─────────────────────────────────────────────────── */
@@ -598,6 +788,7 @@
 
 /* ── Lozenges (Initiative/Speed/Proficiency) ───────────────────── */
 /* Set by Full mode above — no Half-specific override. */
+
 
 /* ── HP/HD bars ─────────────────────────────────────────────────── */
 

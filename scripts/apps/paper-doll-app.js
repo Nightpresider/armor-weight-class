@@ -22,9 +22,16 @@
  * the item itself".
  */
 
-import { MODULE_ID, FLAG_NS, SLOT_TYPES, ITEM_MARKERS } from "../constants.js";
+import { MODULE_ID, FLAG_NS, SLOT_TYPES, ITEM_MARKERS, DRAG_OCCUPIED_CLASS, DRAG_EMPTY_CLASS, DRAG_TARGET_CLASS } from "../constants.js";
 import { getSlotMap, getItemSlot, itemHasMarker } from "../slots.js";
-import { getHandSlotState, getRingSlotState, getExemptItem, actorHasExemptCapableItem, swapHandSlot, swapRingSlot, describeHandBlocker } from "../paired-slots.js";
+import {
+  getHandSlotState, getRingSlotState, getExemptItem, actorHasExemptCapableItem, swapHandSlot, swapRingSlot, describeHandBlocker,
+  getQuiverItem, actorHasEquippedRangedWeapon, isAmmoItem, getPhysicalHandOccupants, isTwoHanded, isRangedWeapon,
+  isPocketCarrier, isPocketEligible, pocketHasRoom, getPocketedItems, pocketItem, unpocketItem, isHandEligibleContainer,
+  pendingPocketReveals, getPocketCapacity, pendingPocketCloses, dropItemViaItemPiles, dropCarrierAndPocketsViaItemPiles,
+  eligiblePocketableItems, pendingPocketHighlights,
+} from "../paired-slots.js";
+import { applyDropHighlights } from "../drag-highlight.js";
 import { AWCApplication } from "./awc-application.js";
 
 // A "grouped slot" shares one visual doll position across several mutually-
@@ -42,6 +49,8 @@ export const RIGHT_COLUMN = ["headBase", "cape", "shirt", "glove", "trouser", "s
 export const CENTER_TOP_ROW = ["backpack", "belt", "purse"];
 
 export const PAPER_DOLL_WIDTH = 420;
+
+// ─── Doll layout building (shared by the live doll and the standalone layout editor) ───
 
 /** GM-configurable empty-slot images (world-shared), keyed by slot key / "hand" / "ring" / "exempt". */
 export function getDollLayout() {
@@ -78,6 +87,15 @@ export function buildRingEntry(dollLayout, pos, item) {
 export function buildExemptEntry(dollLayout, item) {
   const emptyImg = dollLayout.exemptImage ?? "";
   return { kind: "exempt", label: "Exempt", icon: "fas fa-star", item, emptyImg, empty: item ? "" : "awc-doll-empty" };
+}
+
+/** The single Quiver position (real dnd5e ammo) — see paired-slots.js's getQuiverItem(). Rendered above just the Ranged hand-pair, conditionally (actorHasEquippedRangedWeapon()). */
+export function buildQuiverEntry(dollLayout, item) {
+  const emptyImg = dollLayout.quiverImage ?? "";
+  return {
+    kind: "quiver", label: "Quiver", icon: "fas fa-bullseye", item, emptyImg, empty: item ? "" : "awc-doll-empty",
+    quantity: item?.system?.quantity ?? null,
+  };
 }
 
 /**
@@ -147,6 +165,7 @@ export function resolveDollLayoutKey(slot) {
   if (slot.kind === "hand") return ["handImage", slot.side];
   if (slot.kind === "ring") return ["ringImage", null];
   if (slot.kind === "exempt") return ["exemptImage", null];
+  if (slot.kind === "quiver") return ["quiverImage", null];
   return [null, null];
 }
 
@@ -205,7 +224,57 @@ export function slotFromElement(el) {
   return { kind: el.dataset.kind, key: el.dataset.key, pos: el.dataset.pos, side: el.dataset.side, box: el.dataset.box };
 }
 
+/**
+ * Consumes any pending auto-reveal (paired-slots.js's pendingPocketReveals, populated when a
+ * pocket carrier is equipped) for the doll slots just rendered — calls
+ * showViewer(slotEl, carrier, pocketedItems) once per matching slot, then forgets it, so it
+ * fires exactly once regardless of how many times the doll re-renders afterward. Out of combat
+ * only, matching the click-triggered viewer's own scoping (mid-combat, a click opens the
+ * picker instead) — a reveal that happens to land mid-combat is simply dropped, not deferred.
+ */
+export function consumePendingPocketReveals(actor, slotEls, showViewer) {
+  for (const slotEl of slotEls) {
+    const item = itemForSlot(actor, slotFromElement(slotEl));
+    if (!item || !pendingPocketReveals.has(item.id)) continue;
+    pendingPocketReveals.delete(item.id);
+    if (!game.combat) showViewer(slotEl, item, getPocketedItems(actor, item));
+  }
+}
+
+/**
+ * Closes any open pocket picker/viewer for a carrier that just got unequipped (paired-slots.js's
+ * pendingPocketCloses, populated by the updateItem hook when unequipping also unpockets
+ * everything the carrier held) - popups are tagged with data-carrier-id (see _showPocketPicker/
+ * _showPocketViewer) at creation, since they live outside the doll's own re-rendered DOM
+ * (appended to document.body) and wouldn't otherwise be touched by an unequip's re-render.
+ */
+export function consumePendingPocketCloses() {
+  for (const id of pendingPocketCloses) {
+    document.querySelectorAll(`.awc-doll-picker[data-carrier-id="${id}"]`).forEach(el => el.remove());
+  }
+  pendingPocketCloses.clear();
+}
+
+/**
+ * Consumes any pending "item just got auto-pocketed via equip" signal (paired-slots.js's
+ * pendingPocketHighlights, populated by pocketOnEquipIfEligible() when equipping something
+ * redirects it into a pocket instead of a hand) for the doll slots just rendered — calls
+ * showViewer(slotEl, carrier, pocketedItems, itemId) once per matching carrier, then forgets
+ * it, same one-shot lifecycle as consumePendingPocketReveals(). Out of combat only, matching
+ * that same scoping (mid-combat, a click opens the activity picker instead of the plain viewer).
+ */
+export function consumePendingPocketHighlights(actor, slotEls, showViewer) {
+  for (const slotEl of slotEls) {
+    const item = itemForSlot(actor, slotFromElement(slotEl));
+    if (!item || !pendingPocketHighlights.has(item.id)) continue;
+    const highlightItemId = pendingPocketHighlights.get(item.id);
+    pendingPocketHighlights.delete(item.id);
+    if (!game.combat) showViewer(slotEl, item, getPocketedItems(actor, item), highlightItemId);
+  }
+}
+
 /** Resolves the item currently occupying `slot` for `actor` — re-derived fresh every call, never cached. */
+// ─── Item ↔ slot eligibility ───────────────────────────────────────────────
 export function itemForSlot(actor, slot) {
   if (slot.kind === "slot") {
     const map = getSlotMap(actor);
@@ -224,41 +293,151 @@ export function itemForSlot(actor, slot) {
   if (slot.kind === "exempt") {
     return getExemptItem(actor);
   }
+  if (slot.kind === "quiver") {
+    return getQuiverItem(actor);
+  }
   return null;
+}
+
+/** True if `item` (any item, not necessarily this actor's own) matches what `slot` accepts. */
+export function isItemEligibleForSlot(item, slot) {
+  if (slot.kind === "slot") {
+    const group = GROUPED_SLOTS[slot.key];
+    if (group) return group.keys.includes(getItemSlot(item));
+    return getItemSlot(item) === slot.key;
+  }
+  if (slot.kind === "hand") {
+    if (!(item.type === "weapon" || item.type === "consumable" || isHandEligibleContainer(item) || (item.type === "equipment" && getItemSlot(item) === "shield"))) return false;
+    if (itemHasMarker(item, ITEM_MARKERS.IGNORES_HAND_SLOT) || isAmmoItem(item)) return false;
+    // A weapon only fits a hand box matching its own melee/ranged side - both boxes on that
+    // side (Main and Secondary) count, since a two-handed weapon can be dropped on either one
+    // to trigger the same collapse-both-hands placement. A shield/consumable/hand-eligible
+    // Container has no inherent side (its actual side is resolved at equip time - see
+    // resolveOccupantSide() in paired-slots.js), so either side stays eligible for those.
+    if (item.type === "weapon" && slot.side) {
+      return (isRangedWeapon(item) ? "ranged" : "melee") === slot.side;
+    }
+    return true;
+  }
+  if (slot.kind === "ring") return getItemSlot(item) === "ring";
+  if (slot.kind === "exempt") {
+    return (item.type === "weapon" || (item.type === "equipment" && getItemSlot(item) === "shield"))
+      && itemHasMarker(item, ITEM_MARKERS.IGNORES_HAND_SLOT);
+  }
+  if (slot.kind === "quiver") return isAmmoItem(item);
+  return false;
+}
+
+/**
+ * Resolves where `item` should go for a "drop anywhere on the doll" gesture - the doll's
+ * portrait background, or any gap between boxes, rather than a specific .awc-doll-slot.
+ * Checked in the same priority order the updateItem hook dispatcher already uses (exempt →
+ * hand → ring → quiver) via bare, position-less slot descriptors - isItemEligibleForSlot's
+ * "hand" branch already treats a missing `side` as "any side is fine", so this deliberately
+ * doesn't pick a specific box: equipItemToSlot()/validateAndEquipHandItem() already treat a
+ * missing position as "use the smart default" (prefer Main if free, else Secondary), which is
+ * exactly the wanted behavior for a genuinely ambiguous item (e.g. a Light weapon) dropped
+ * imprecisely - no new placement logic needed. Falls back to a regular armor/clothing/jewelry
+ * slot via getItemSlot(), routing through GROUPED_SLOTS the same way every other slot-key
+ * resolution in this file already does. Returns null if the item isn't equippable at all.
+ */
+export function resolveGenericEquipTarget(item) {
+  for (const candidate of [{ kind: "exempt" }, { kind: "hand" }, { kind: "ring" }, { kind: "quiver" }]) {
+    if (isItemEligibleForSlot(item, candidate)) return candidate;
+  }
+  const slotKey = getItemSlot(item);
+  if (!slotKey) return null;
+  const groupKey = Object.keys(GROUPED_SLOTS).find(g => GROUPED_SLOTS[g].keys.includes(slotKey));
+  const candidate = { kind: "slot", key: groupKey ?? slotKey };
+  return isItemEligibleForSlot(item, candidate) ? candidate : null;
 }
 
 /** Every currently-unequipped item on `actor` eligible to be dropped/clicked into `slot`. */
 export function eligibleItemsForSlot(actor, slot) {
-  if (slot.kind === "slot") {
-    const group = GROUPED_SLOTS[slot.key];
-    if (group) return actor.items.filter(i => !i.system?.equipped && group.keys.includes(getItemSlot(i)));
-    return actor.items.filter(i => !i.system?.equipped && getItemSlot(i) === slot.key);
-  }
-  if (slot.kind === "hand") {
-    return actor.items.filter(i => !i.system?.equipped
-      && (i.type === "weapon" || (i.type === "equipment" && getItemSlot(i) === "shield"))
-      && !itemHasMarker(i, ITEM_MARKERS.IGNORES_HAND_SLOT));
-  }
-  if (slot.kind === "ring") {
-    return actor.items.filter(i => !i.system?.equipped && getItemSlot(i) === "ring");
-  }
-  if (slot.kind === "exempt") {
-    return actor.items.filter(i => !i.system?.equipped
-      && (i.type === "weapon" || (i.type === "equipment" && getItemSlot(i) === "shield"))
-      && itemHasMarker(i, ITEM_MARKERS.IGNORES_HAND_SLOT));
-  }
-  return [];
+  return actor.items.filter(i => !i.system?.equipped && isItemEligibleForSlot(i, slot));
 }
 
 /** Equips `item` into `slot`, remembering the specific hand/ring position when the box addresses one. Conflict/capacity resolution runs from the resulting updateItem hook — never duplicated here. */
+// ─── Equip / pocket-drop actions ───────────────────────────────────────────
 export async function equipItemToSlot(item, slot) {
   const update = { "system.equipped": true };
   if (slot.kind === "hand" && slot.pos) update[`flags.${FLAG_NS}.handSlot`] = slot.pos;
-  if (slot.kind === "ring") update[`flags.${FLAG_NS}.ringSlot`] = slot.pos;
+  if (slot.kind === "hand" && slot.side && (item.type === "consumable" || isHandEligibleContainer(item))) update[`flags.${FLAG_NS}.heldSide`] = slot.side;
+  if (slot.kind === "ring" && slot.pos) update[`flags.${FLAG_NS}.ringSlot`] = slot.pos;
+  if (item.getFlag(FLAG_NS, "pocketedIn")) update[`flags.${FLAG_NS}.-=pocketedIn`] = null;
   await item.update(update);
 }
 
+/**
+ * Drop-onto-carrier orchestration shared by AWCPaperDoll._onDrop and doll-embed.js's onDrop —
+ * stashes `item` in `carrier`'s pockets, displacing its oldest occupant first if full. A
+ * displaced item is dropped to the ground (mid-combat, Item Piles active) or simply
+ * unpocketed back to loose inventory otherwise — never automatically re-equipped anywhere.
+ */
+export async function handlePocketDrop(actor, item, carrier) {
+  const [oldest] = pocketHasRoom(actor, carrier) ? [] : getPocketedItems(actor, carrier);
+  await handleTargetedPocketDrop(actor, item, carrier, oldest);
+}
+
+/**
+ * Displaces `existingItem` (a SPECIFIC pocketed item, or null/undefined if the target slot was
+ * already empty) before pocketing `item` in its place - handlePocketDrop() above is the
+ * "displace whatever's oldest" case (dropping on the carrier's own doll slot); dropping
+ * directly on one of the carrier's individually revealed pocket-slot boxes (drag-highlight.js's
+ * openDragPocketWindow) targets that exact slot's occupant instead.
+ */
+export async function handleTargetedPocketDrop(actor, item, carrier, existingItem) {
+  if (existingItem) {
+    if (game.combat && game.modules.get("item-piles")?.active) await dropItemViaItemPiles(actor, existingItem);
+    else await unpocketItem(existingItem);
+  }
+  await pocketItem(item, carrier);
+}
+
+/**
+ * Resolves the item from a native drop event's dataTransfer payload, adopting a foreign item
+ * onto `actor` first if dollAllowNonOwned allows it - the same resolution _onDrop/_onDropAnywhere
+ * perform, factored out for drag-highlight.js's drag-revealed pocket-slot drop targets, which
+ * have no equivalent of those methods' own `this.actor`.
+ */
+export async function resolveDroppedItem(event, actor) {
+  let data;
+  try { data = JSON.parse(event.dataTransfer.getData("text/plain")); }
+  catch { return null; }
+  if (!data?.uuid) return null;
+
+  let item = await fromUuid(data.uuid);
+  if (!item) return null;
+
+  if (item.parent?.id !== actor.id) {
+    if (!game.settings.get(MODULE_ID, "dollAllowNonOwned")) return null;
+    const [created] = await actor.createEmbeddedDocuments("Item", [item.toObject()]);
+    item = created;
+  }
+  return item;
+}
+
+/**
+ * A versatile weapon dropped directly onto a hand box already holding a
+ * DIFFERENT versatile weapon redirects to the opposite physical hand
+ * instead of displacing it. Only rewrites the target slot descriptor —
+ * whatever's actually in the opposite hand is still resolved by
+ * validateAndEquipHandItem()'s own displacement/two-weapon-fighting rules
+ * once equipped, same as any other drop.
+ */
+export function redirectVersatileDrop(actor, item, targetSlot) {
+  if (targetSlot.kind !== "hand" || isTwoHanded(item) || !item.system?.isVersatile) return targetSlot;
+
+  const occupant = itemForSlot(actor, targetSlot);
+  if (!occupant || occupant.id === item.id || !occupant.system?.isVersatile) return targetSlot;
+
+  const oppositePos = targetSlot.pos === "main" ? "secondary" : "main";
+  const box = `${targetSlot.side}${oppositePos === "main" ? "Main" : "Secondary"}`;
+  return { kind: "hand", side: targetSlot.side, box, pos: oppositePos };
+}
+
 /** Hover-tooltip HTML for an equipped item's doll slot: name, AC/damage, resistances, value. */
+// ─── Tooltip / label builders ──────────────────────────────────────────────
 export function buildTooltipHTML(actor, item) {
   const lines = [`<strong>${item.name}</strong>`];
 
@@ -279,9 +458,306 @@ export function buildTooltipHTML(actor, item) {
   const price = item.system?.price?.value;
   if (price !== undefined) lines.push(`Value: ${price} ${item.system?.price?.denomination ?? "gp"}`);
 
+  if (isPocketCarrier(item)) {
+    const pocketed = getPocketedItems(actor, item);
+    if (pocketed.length) lines.push(`Pocketed: ${pocketed.map(i => i.name).join(", ")}`);
+  }
+
   return lines.join("<br>");
 }
 
+/** "Read Scroll of Fireball (2/3)" for a scroll/wand with limited uses, otherwise just the
+ *  activity's own name — a plain charge-count DISPLAY only; nothing about 0-charge behavior
+ *  (deletion/recharge/transformation) is implemented here, deliberately out of scope. */
+export function buildPocketedItemLabel(item, activity) {
+  const name = activity.name || item.name;
+  const subtype = item.system?.type?.value;
+  const uses = item.system?.uses;
+  if ((subtype === "scroll" || subtype === "wand") && uses?.max) {
+    return `${name} (${uses.value ?? 0}/${uses.max})`;
+  }
+  return name;
+}
+
+/** Non-interactive placeholder row shown in the pocket picker/viewer when nothing's pocketed
+ *  yet (or, via `message`, showPocketFillPicker's own "nothing eligible" case) - the window
+ *  still opens (see _onClick's isPocketCarrier branch) so a click gives visible feedback
+ *  instead of silently doing nothing. */
+// ─── Pocket-slot DOM rendering ─────────────────────────────────────────────
+export function addPocketEmptyState(inner, message = "Nothing pocketed") {
+  const empty = document.createElement("div");
+  empty.classList.add("awc-doll-attack-option", "awc-doll-pocket-empty");
+  empty.textContent = message;
+  inner.appendChild(empty);
+}
+
+/**
+ * Renders one small icon slot (matching _showPicker's own awc-doll-slot/awc-doll-picker-item
+ * look, sized down via CSS) per configured Pocket Capacity slot - not just however many items
+ * happen to be pocketed right now, so "3 slots" reads as 3 boxes (some possibly empty), the
+ * same mental model as the doll's own hand/ring/armor slots. Filled slots always open their
+ * item's sheet on double-click. Extra pocketed items beyond a lowered capacity still get a box,
+ * so nothing already stored silently disappears from view.
+ *
+ * `onUse(item, activity)` (click picker/combined picker only) wires a plain click for whichever
+ * filled slots carry a usable Activity - the out-of-combat viewer omits it (single-click
+ * intentionally does nothing there).
+ *
+ * `onDropTarget(event, existingItemOrNull)` (drag-highlight.js's drag-revealed pocket window
+ * only) turns every slot - filled or empty - into its own real drop target, colored the same
+ * red/yellow drag-highlight.js uses everywhere else so its proximity tracking (which queries
+ * any .awc-doll-slot carrying those classes) picks these up automatically even though they
+ * only exist for the duration of a drag.
+ *
+ * `onEmptyClick(entryEl)` (click viewer/picker only, not the drag-revealed window) makes an
+ * EMPTY slot clickable too, same as clicking an empty doll slot opens its own equip-picker -
+ * see showPocketFillPicker().
+ *
+ * `highlightItemId` (auto-reveal only - consumePendingPocketHighlights()) gives the one filled
+ * slot matching that item id a persistent green "landed here" pulse (the same class drag-time
+ * proximity tracking uses), so equipping something that got auto-redirected into a pocket
+ * instead of a hand makes it obvious exactly which slot it ended up in.
+ */
+export function renderPocketSlots(inner, carrier, pocketedItems, { onUse, onDropTarget, onEmptyClick, highlightItemId } = {}) {
+  const capacity = Math.max(getPocketCapacity(carrier), pocketedItems.length);
+  if (!capacity) { addPocketEmptyState(inner); return; }
+
+  // Right-click un-pockets in place (below) without closing the popup, unlike every other
+  // interaction here (click/onUse and onEmptyClick both close it first, and onDropTarget's
+  // popup is torn down on dragend regardless) - without this, the vacated slot keeps showing a
+  // stale "ghost" icon until the popup is closed and reopened.
+  const refresh = () => {
+    inner.innerHTML = "";
+    renderPocketSlots(inner, carrier, getPocketedItems(carrier.actor, carrier), { onUse, onDropTarget, onEmptyClick });
+  };
+
+  for (let i = 0; i < capacity; i++) {
+    const pocketedItem = pocketedItems[i] ?? null;
+    const entry = document.createElement("div");
+    entry.classList.add("awc-doll-slot", "awc-doll-picker-item");
+    // The green pulse keyframe only actually fires when paired with occupied/empty (matching
+    // the drag-time compound selectors, .awc-doll-drop-occupied.awc-doll-drop-target) - the
+    // more specific 3-class rule then wins over the plain 2-class red "occupied" pulse alone.
+    if (pocketedItem && pocketedItem.id === highlightItemId) entry.classList.add(DRAG_OCCUPIED_CLASS, DRAG_TARGET_CLASS);
+    inner.appendChild(entry);
+
+    if (onDropTarget) {
+      entry.classList.add(pocketedItem ? DRAG_OCCUPIED_CLASS : DRAG_EMPTY_CLASS);
+      entry.addEventListener("dragover", ev => ev.preventDefault());
+      entry.addEventListener("drop", ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onDropTarget(ev, pocketedItem);
+      });
+    }
+
+    if (!pocketedItem) {
+      entry.classList.add("awc-doll-picker-item-empty");
+      if (onEmptyClick) {
+        entry.classList.add("awc-doll-picker-item-clickable");
+        entry.addEventListener("click", ev => {
+          ev.stopPropagation();
+          onEmptyClick(entry);
+        });
+      }
+      continue;
+    }
+
+    const activity = pocketedItem.system.activities?.contents?.[0];
+    entry.style.backgroundImage = `url('${pocketedItem.img}')`;
+    entry.dataset.tooltip = activity ? buildPocketedItemLabel(pocketedItem, activity) : pocketedItem.name;
+    entry.addEventListener("dblclick", async ev => {
+      ev.stopPropagation();
+      await pocketedItem.sheet?.render(true);
+      // The popup's own z-index (positionPickerAboveSlot) is a snapshot of "above every
+      // .application at the moment THIS popup was created" - it has no idea about a sheet
+      // opened AFTERWARD from one of its own entries, which can otherwise render underneath a
+      // popup that's still open (the pocket viewer deliberately stays open across this).
+      if (pocketedItem.sheet?.element) pocketedItem.sheet.element.style.zIndex = String(Number(inner.style.zIndex || 0) + 1);
+    });
+
+    // Right-click un-pockets, mirroring the carrier's own right-click-to-unequip - in combat
+    // with Item Piles active it drops the item for real instead, same reasoning as the
+    // carrier's own right-click and the auto-unpocket-on-unequip hook (paired-slots.js).
+    entry.addEventListener("contextmenu", async ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const actor = pocketedItem.actor;
+      if (actor && game.combat && game.modules.get("item-piles")?.active) {
+        if (await dropItemViaItemPiles(actor, pocketedItem)) { refresh(); return; }
+      }
+      await unpocketItem(pocketedItem);
+      refresh();
+    });
+
+    if (onUse && activity) {
+      entry.addEventListener("click", async ev => {
+        ev.stopPropagation();
+        await onUse(pocketedItem, activity);
+      });
+    }
+  }
+}
+
+/**
+ * Clicking an empty pocket slot (renderPocketSlots' onEmptyClick) opens this - the pocket-
+ * window equivalent of _showPicker's own equip-candidate icon grid, listing
+ * eligiblePocketableItems(actor, carrier) instead of eligibleItemsForSlot(). Picking one
+ * pockets it (pocketItem()). Pocketing doesn't reliably flip system.equipped, so it won't
+ * always trigger AWC's own equip-change refresh hook - `onFilled` lets the caller force one
+ * directly instead of relying on it.
+ */
+export function showPocketFillPicker(slotEl, actor, carrier, onFilled) {
+  const items = eligiblePocketableItems(actor, carrier);
+
+  const inner = document.createElement("div");
+  inner.classList.add("awc-doll-picker");
+  document.body.appendChild(inner);
+  positionPickerAboveSlot(inner, slotEl);
+  const close = wirePickerDismiss(inner);
+
+  if (!items.length) { addPocketEmptyState(inner, "No eligible items"); return; }
+
+  for (const item of items) {
+    const entry = document.createElement("div");
+    entry.classList.add("awc-doll-slot", "awc-doll-picker-item");
+    entry.style.backgroundImage = `url('${item.img}')`;
+    entry.dataset.tooltip = item.name;
+    inner.appendChild(entry);
+    entry.addEventListener("click", async ev => {
+      ev.stopPropagation();
+      close();
+      await pocketItem(item, carrier);
+      onFilled?.();
+    });
+  }
+}
+
+/**
+ * Rolls an attack, restoring midi-qol automation (auto damage roll, auto-apply) that a plain
+ * activity.rollAttack() call skips - midi only automates once a Workflow exists, and that's
+ * created by activity.use(), not rollAttack() itself.
+ *
+ * If "Auto Roll Attack" is on, the Workflow rolls itself the instant it's created; if off,
+ * nothing rolls until told to. Rather than read that setting directly, this polls the
+ * Workflow's own `attackRoll` for a moment and only rolls manually if nothing showed up -
+ * correct either way, and a clean fallback when midi isn't installed at all.
+ *
+ * attackMode is also pre-written to the item's "last used" flag, so an auto-triggered roll
+ * (which doesn't take an explicit attackMode) still picks up what was chosen here. Fast-forward
+ * is forced on this specific workflow so the popup stays dialog-free regardless of the world's
+ * own fast-forward setting.
+ */
+// ─── Attack-mode automation ─────────────────────────────────────────────────
+export async function rollAttackWithAutomation(activity, attackMode) {
+  if (attackMode !== undefined) {
+    await activity.item.setFlag("dnd5e", `last.${activity.id}`, { attackMode });
+  }
+
+  const usage = { midiOptions: { workflowOptions: { autoFastAttack: true, fastForwardDamage: true } } };
+  await activity.use(usage, { configure: false }, {});
+
+  const workflow = usage.workflow;
+  if (!workflow) {
+    await activity.rollAttack({ attackMode }, { configure: false }, {});
+    return;
+  }
+
+  for (let i = 0; i < 10 && !workflow.attackRoll; i++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!workflow.attackRoll) {
+    await activity.rollAttack({ attackMode, workflow }, { configure: false }, {});
+  }
+}
+
+/** Hides "offhand" when clicked from the physical Main hand; hides "oneHanded"/"twoHanded"
+ *  when clicked from Secondary (only "offhand" and any hand-independent mode remain there).
+ *  For a versatile weapon in Main, "oneHanded" and "twoHanded" are mutually exclusive rather
+ *  than both offered: two-handed is attempted automatically whenever the opposite hand is
+ *  free, and it automatically falls back to one-handed the moment a second weapon or shield
+ *  occupies that hand — the player never has to choose between them by hand-occupancy alone.
+ *  A plain two-handed-only weapon is unaffected (dnd5e never lists "oneHanded" for one, and
+ *  its own equip logic already forces both physical hands empty of anything else). */
+export function filterAttackModesForSlot(modes, slot, actor) {
+  if (slot?.kind !== "hand" || !slot.pos) return modes;
+  const occupants = getPhysicalHandOccupants(actor);
+  const oppositeOccupied = !!occupants[slot.pos === "main" ? "secondary" : "main"];
+  const isVersatileWeapon = modes.some(m => m.value === "oneHanded") && modes.some(m => m.value === "twoHanded");
+
+  return modes.filter(mode => {
+    if (slot.pos === "main" && mode.value === "offhand") return false;
+    if (slot.pos === "secondary" && (mode.value === "oneHanded" || mode.value === "twoHanded")) return false;
+    if (mode.value === "twoHanded" && oppositeOccupied) return false;
+    if (isVersatileWeapon && slot.pos === "main" && mode.value === "oneHanded" && !oppositeOccupied) return false;
+    return true;
+  });
+}
+
+/** Anchors a floating popup just above slotEl, in viewport coordinates — appended to
+ *  document.body (not a doll-local container) so a transformed ancestor (.stats'
+ *  translateZ(3px) on the embedded sheet) can't hijack position:fixed's containing block. */
+/** Highest z-index among currently-rendered Foundry windows, plus a margin - a fixed
+ *  guess (e.g. 100) loses to any actor sheet, since Foundry bumps a focused window's
+ *  z-index well past that as windows are opened/focused during a session. */
+// ─── Popup positioning / dismiss helpers ───────────────────────────────────
+function _aboveAllWindows() {
+  let max = 0;
+  document.querySelectorAll(".application").forEach(el => {
+    const z = parseInt(el.style.zIndex || getComputedStyle(el).zIndex, 10);
+    if (!Number.isNaN(z)) max = Math.max(max, z);
+  });
+  return max + 10;
+}
+
+/** True if `slotEl` belongs to the character-sheet-embedded doll while it's in Half sidebar
+ *  mode specifically (vs. Full) - used to give Full mode's own popups a couple pixels more
+ *  than Half's, on top of the size they otherwise share (see .awc-doll-picker-full in CSS). */
+export function isHalfModeEmbedded(slotEl) {
+  return !!slotEl.closest(".awc-sidebar-half");
+}
+
+export function positionPickerAboveSlot(el, slotEl) {
+  const rect = slotEl.getBoundingClientRect();
+  // Half the usual gap for the character-sheet-embedded doll (Full and Half modes alike) -
+  // matches its own tighter, smaller-scale look; the pop-out window's popups keep the wider gap.
+  const gap = slotEl.closest(".awc-doll-embedded") ? 3 : 6;
+  el.style.position = "fixed";
+  el.style.left = `${rect.left + rect.width / 2}px`;
+  el.style.top = `${rect.top - gap}px`;
+  el.style.transform = "translate(-50%, -100%)";
+  el.style.zIndex = String(_aboveAllWindows());
+}
+
+/**
+ * Wires a picker popup's dismissal: a click OR right-click anywhere outside it removes it
+ * and cleans up both listeners. A right-click on the doll itself (e.g. unequipping the very
+ * item the popup is for) fires "contextmenu", not "click" - without listening for both, that
+ * kind of dismiss-by-side-effect never reached a "click"-only listener, leaving the popup
+ * orphaned on screen. Returns a close() function callers should invoke themselves after
+ * successfully picking an option, so the listeners don't linger.
+ */
+export function wirePickerDismiss(inner) {
+  const dismiss = ev => {
+    if (!inner.contains(ev.target)) close();
+  };
+  const close = () => {
+    inner.remove();
+    document.removeEventListener("click", dismiss, true);
+    document.removeEventListener("contextmenu", dismiss, true);
+  };
+  setTimeout(() => {
+    document.addEventListener("click", dismiss, true);
+    document.addEventListener("contextmenu", dismiss, true);
+  }, 0);
+  return close;
+}
+
+// ═══ AWCPaperDoll: the pop-out doll application ═══════════════════════════
+// Methods below are mostly thin wrappers delegating to the free functions above (so
+// doll-embed.js's sheet-embedded doll can reuse the exact same logic) - grouped here by what a
+// reader touching this class would actually be doing: render, slot lookups, click/interaction,
+// drag & drop, hover tooltip, sheet embedding.
 export class AWCPaperDoll extends AWCApplication {
   constructor(actor) {
     super();
@@ -354,6 +830,8 @@ export class AWCPaperDoll extends AWCApplication {
       ],
       melee: buildHandGroup(layout, "melee", handState),
       ranged: buildHandGroup(layout, "ranged", handState),
+      showQuiver: actorHasEquippedRangedWeapon(actor),
+      quiver: buildQuiverEntry(layout, getQuiverItem(actor)),
     };
   }
 
@@ -391,10 +869,24 @@ export class AWCPaperDoll extends AWCApplication {
       slot.addEventListener("dragover", ev => ev.preventDefault());
       slot.addEventListener("drop", this._onDrop.bind(this));
       slot.addEventListener("click", this._onClick.bind(this));
+      slot.addEventListener("dblclick", this._onDoubleClick.bind(this));
       slot.addEventListener("contextmenu", this._onContextMenu.bind(this));
       slot.addEventListener("pointerenter", this._onHoverIn.bind(this));
       slot.addEventListener("pointerleave", this._onHoverOut.bind(this));
     });
+
+    // Catch-all for a drop that lands anywhere else in the doll (the portrait background, a
+    // gap between boxes) - every per-slot drop handler above already calls
+    // event.stopPropagation(), so this never fires for a drop that landed precisely on a slot.
+    const content = html.querySelector(".awc-doll-content");
+    if (content) {
+      content.addEventListener("dragover", ev => ev.preventDefault());
+      content.addEventListener("drop", this._onDropAnywhere.bind(this));
+    }
+
+    consumePendingPocketReveals(this.actor, html.querySelectorAll(".awc-doll-slot"), (slotEl, carrier, pocketed) => this._showPocketViewer(slotEl, carrier, pocketed));
+    consumePendingPocketHighlights(this.actor, html.querySelectorAll(".awc-doll-slot"), (slotEl, carrier, pocketed, highlightItemId) => this._showPocketViewer(slotEl, carrier, pocketed, highlightItemId));
+    consumePendingPocketCloses();
   }
 
   // ─── Slot addressing helpers ──────────────────────────────────────────────
@@ -423,21 +915,88 @@ export class AWCPaperDoll extends AWCApplication {
     const slot = this._slotFromElement(slotEl);
     const item = this._itemForSlot(slot);
 
-    if (item) { item.sheet?.render(true); return; }
+    if (item) {
+      const isCarrier = isPocketCarrier(item);
+      const pocketed = isCarrier ? getPocketedItems(this.actor, item) : [];
+
+      // Mid-combat, an equipped item that can attack gets a quick attack-mode popup instead of
+      // the full sheet - opening the sheet to dig for the Attack button is too slow at the
+      // table. A pocket carrier's own pocketed items' action options are folded into the same
+      // popup, alongside its own attack (if it has one) - see _showPocketPicker().
+      if (game.combat) {
+        const activity = item.system.activities?.getByType?.("attack")?.[0];
+        if (activity || isCarrier) { this._showPocketPicker(slotEl, item, activity, pocketed); return; }
+        item.sheet?.render(true);
+        return;
+      }
+
+      // Out of combat, a pocket carrier always opens its pocket window on click, even if
+      // nothing's pocketed yet (shows an empty-state message instead of silently doing
+      // nothing) - double-click an entry to open its sheet (see _showPocketViewer()). Anything
+      // else does nothing on a plain single-click - double-click opens the sheet instead
+      // (_onDoubleClick).
+      if (isCarrier) this._showPocketViewer(slotEl, item, pocketed);
+      return;
+    }
 
     const eligible = this._eligibleItemsForSlot(slot);
     this._showPicker(slotEl, slot, eligible);
   }
 
+  /** Opens an item's sheet regardless of combat state - the universal way to get to an
+   *  equipped item's sheet now that a plain single-click no longer does that out of combat
+   *  (see _onClick). Works identically for a carrier's own slot and, via the pocket viewer's
+   *  own dblclick wiring, for a revealed pocketed item too. */
+  _onDoubleClick(event) {
+    event.stopPropagation();
+    const slot = this._slotFromElement(event.currentTarget);
+    const item = this._itemForSlot(slot);
+    item?.sheet?.render(true);
+  }
+
+  /** Appends `item`'s own attack-mode options (item.system.attackModes - One-Handed/Two-
+   *  Handed/Thrown/etc., whatever applies to this specific weapon, filtered by hand position -
+   *  see filterAttackModesForSlot()) as text rows into an already-open popup, rolling the
+   *  attack against the current target(s) on click. Shared by _showPocketPicker below for both
+   *  a plain weapon's attack (no pockets involved) and a carrier's own attack alongside its
+   *  pocketed items' options. */
+  _appendAttackModeOptions(inner, slotEl, item, activity, close) {
+    const slot = this._slotFromElement(slotEl);
+    const rawModes = (item.system.attackModes ?? []).filter(m => !m.rule);
+    const modes = filterAttackModesForSlot(rawModes, slot, this.actor);
+    // Weapons expose distinct modes (versatile/thrown/offhand/etc.); anything
+    // else with an Attack activity (a wand, a magic item) just gets one
+    // generic option - rollAttack() below works identically either way.
+    const options = modes.length ? modes : [{ value: undefined, label: "DND5E.ATTACK.Title.one" }];
+
+    for (const mode of options) {
+      const entry = document.createElement("div");
+      entry.classList.add("awc-doll-attack-option");
+      // A single remaining option isn't really a choice between attack modes - show the
+      // activity's own name (e.g. "Slash") instead of a mechanical label like "One-Handed".
+      entry.textContent = options.length === 1 ? (activity.name || game.i18n.localize(mode.label)) : game.i18n.localize(mode.label);
+      inner.appendChild(entry);
+      entry.addEventListener("click", async ev => {
+        ev.stopPropagation();
+        close();
+        await rollAttackWithAutomation(activity, mode.value);
+      });
+    }
+  }
+
+  /** Positioned above the clicked slot, same as _showPocketPicker - previously injected into
+   *  the doll's fixed .awc-doll-center container, which also holds the centerTop row
+   *  (backpack/belt/purse) and the gear/close controls as siblings - wiping that container's
+   *  innerHTML on open, and again on dismiss without picking anything, left it permanently
+   *  blank until an unrelated render happened to rebuild it. */
   _showPicker(slotEl, slot, items) {
-    const center = this.element.querySelector(".awc-doll-center");
-    if (!center) return;
-    center.innerHTML = "";
     if (!items.length) return;
 
     const inner = document.createElement("div");
     inner.classList.add("awc-doll-picker");
-    center.appendChild(inner);
+    document.body.appendChild(inner);
+    positionPickerAboveSlot(inner, slotEl);
+    const close = wirePickerDismiss(inner);
 
     for (const item of items) {
       const entry = document.createElement("div");
@@ -448,18 +1007,74 @@ export class AWCPaperDoll extends AWCApplication {
       entry.addEventListener("click", async ev => {
         ev.stopPropagation();
         await this._equip(item, slot);
-        center.innerHTML = "";
+        close();
       });
     }
-
-    const dismiss = ev => {
-      if (!center.contains(ev.target)) { center.innerHTML = ""; document.removeEventListener("click", dismiss, true); }
-    };
-    setTimeout(() => document.addEventListener("click", dismiss, true), 0);
   }
 
   async _equip(item, slot) {
     await equipItemToSlot(item, slot);
+  }
+
+  /** In-combat popup for an item with an attack activity, pocketed contents, or both - `item`'s
+   *  own attack-mode options (text rows, _appendAttackModeOptions) come first when it has an
+   *  activity, followed by a pocket icon-grid (renderPocketSlots) for whatever's pocketed (if
+   *  any); either section is skipped when it has nothing to show. A filled pocket slot with a
+   *  usable Activity is clickable the same way: attack activities reuse
+   *  rollAttackWithAutomation(), every other type's plain .use() already performs the whole
+   *  action, same as dnd5e's own "Use" button (its midi-qol automation hooks aren't scoped to
+   *  Attack, so no extra workaround is needed for those). Tagged with the carrier's id so an
+   *  unequip that auto-empties its pockets can find and close this popup again
+   *  (consumePendingPocketCloses). */
+  _showPocketPicker(slotEl, item, activity, pocketedItems, highlightItemId) {
+    const inner = document.createElement("div");
+    inner.classList.add("awc-doll-picker", "awc-doll-attack-picker");
+    inner.dataset.carrierId = item.id;
+    document.body.appendChild(inner);
+    positionPickerAboveSlot(inner, slotEl);
+    const close = wirePickerDismiss(inner);
+
+    if (activity) this._appendAttackModeOptions(inner, slotEl, item, activity, close);
+
+    if (getPocketCapacity(item)) {
+      const pocketRow = document.createElement("div");
+      pocketRow.classList.add("awc-doll-pocket-row");
+      inner.appendChild(pocketRow);
+      renderPocketSlots(pocketRow, item, pocketedItems, {
+        onUse: async (pocketedItem, pocketActivity) => {
+          close();
+          if (pocketActivity.type === "attack") await rollAttackWithAutomation(pocketActivity, undefined);
+          else await pocketActivity.use();
+        },
+        onEmptyClick: () => {
+          close();
+          showPocketFillPicker(slotEl, this.actor, item, () => this.render());
+        },
+        highlightItemId,
+      });
+    }
+  }
+
+  /** Out-of-combat counterpart to _showPocketPicker - no onUse callback, so a single click on
+   *  a filled slot does nothing (matching the same "single-click does nothing out of combat"
+   *  rule _onClick now applies to every other slot); double-click still opens that pocketed
+   *  item's own sheet regardless. Dismisses only on an outside click (wirePickerDismiss), so
+   *  it stays open across a double-click on one of its own entries. */
+  _showPocketViewer(slotEl, carrier, pocketedItems, highlightItemId) {
+    const inner = document.createElement("div");
+    inner.classList.add("awc-doll-picker");
+    inner.dataset.carrierId = carrier.id;
+    document.body.appendChild(inner);
+    positionPickerAboveSlot(inner, slotEl);
+    const close = wirePickerDismiss(inner);
+
+    renderPocketSlots(inner, carrier, pocketedItems, {
+      onEmptyClick: () => {
+        close();
+        showPocketFillPicker(slotEl, this.actor, carrier, () => this.render());
+      },
+      highlightItemId,
+    });
   }
 
   // ─── Interaction: right-click (unequip, or set a custom empty-slot image) ──
@@ -469,15 +1084,21 @@ export class AWCPaperDoll extends AWCApplication {
     event.stopPropagation();
     const slot = this._slotFromElement(event.currentTarget);
     const item = this._itemForSlot(slot);
-    if (item) {
-      await item.update({ "system.equipped": false });
+    if (!item) {
+      // An empty slot's custom background image is set only from Configure Paper Doll now,
+      // not from the live doll - right-clicking an empty slot here does nothing.
       return;
     }
-    // Empty slot: GM can assign a custom background image for it (matches
-    // the original module's per-slot image picker), stored in the world-
-    // level dollLayout setting so it's shared by every actor's doll.
-    if (!game.user.isGM) return;
-    pickSlotImage(slot);
+
+    // Mid-combat, right-clicking a real drop (Item Piles active, a token to drop under)
+    // removes the item entirely instead of just unequipping it - a plain unequip is the
+    // fallback whenever either condition isn't met, in or out of combat. A pocket carrier's
+    // own pocketed contents come along in the same pile (dropCarrierAndPocketsViaItemPiles),
+    // rather than being orphaned or silently returned to loose inventory.
+    if (game.combat && game.modules.get("item-piles")?.active) {
+      if (await dropCarrierAndPocketsViaItemPiles(this.actor, item)) return;
+    }
+    await item.update({ "system.equipped": false });
   }
 
   // ─── Interaction: drag/drop ───────────────────────────────────────────────
@@ -488,6 +1109,7 @@ export class AWCPaperDoll extends AWCApplication {
     const item = this._itemForSlot(slot);
     if (!item) { event.preventDefault(); return; }
     event.dataTransfer.setData("text/plain", JSON.stringify({ type: "AWCDollItem", uuid: item.uuid, ...slot }));
+    applyDropHighlights(item);
   }
 
   async _onDrop(event) {
@@ -498,7 +1120,7 @@ export class AWCPaperDoll extends AWCApplication {
     catch { return; }
     if (!data?.uuid) return;
 
-    const targetSlot = this._slotFromElement(event.currentTarget);
+    let targetSlot = this._slotFromElement(event.currentTarget);
     let item = await fromUuid(data.uuid);
     if (!item) return;
 
@@ -526,9 +1148,44 @@ export class AWCPaperDoll extends AWCApplication {
       item = created;
     }
 
+    const dropCarrier = this._itemForSlot(targetSlot);
+    if (dropCarrier && dropCarrier.id !== item.id && isPocketEligible(item, dropCarrier)) {
+      await handlePocketDrop(this.actor, item, dropCarrier);
+      return;
+    }
+
+    targetSlot = redirectVersatileDrop(this.actor, item, targetSlot);
+
     const eligible = this._eligibleItemsForSlot(targetSlot).some(i => i.id === item.id) || this._itemForSlot(targetSlot)?.id === item.id;
     if (!eligible && targetSlot.kind === "slot" && getItemSlot(item) !== targetSlot.key) return;
     await this._equip(item, targetSlot);
+  }
+
+  /**
+   * Catch-all for a drop that missed every specific slot - resolves the same generic target a
+   * precise drop would eventually land on (see resolveGenericEquipTarget()) and equips there
+   * directly. Deliberately skips everything _onDrop() needs a REAL target slot for: same-pair
+   * swap detection, pocket-drop detection, and the versatile-weapon redirect all require
+   * knowing exactly which box was targeted, which this path doesn't have.
+   */
+  async _onDropAnywhere(event) {
+    event.preventDefault();
+    let data;
+    try { data = JSON.parse(event.dataTransfer.getData("text/plain")); }
+    catch { return; }
+    if (!data?.uuid) return;
+
+    let item = await fromUuid(data.uuid);
+    if (!item) return;
+
+    if (item.parent?.id !== this.actor.id) {
+      if (!game.settings.get(MODULE_ID, "dollAllowNonOwned")) return;
+      const [created] = await this.actor.createEmbeddedDocuments("Item", [item.toObject()]);
+      item = created;
+    }
+
+    const target = resolveGenericEquipTarget(item);
+    if (target) await this._equip(item, target);
   }
 
   // ─── Interaction: hover tooltip ────────────────────────────────────────────
